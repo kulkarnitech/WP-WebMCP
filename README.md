@@ -1,3 +1,6 @@
+🚀 Check WebMCP support online:
+https://webmcpchecker.com
+
 # WP WebMCP Layer
 
 Adds a WebMCP tool layer to WordPress with:
