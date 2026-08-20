@@ -55,11 +55,12 @@ final class AdminBar {
 
         $lines[] = $enabled ? 'Layer: Enabled' : 'Layer: Disabled';
 
-        $lines[] = 'wp_search: ' . (Plugin::opt('tool_wp_search', 1) ? 'On' : 'Off');
-        $lines[] = 'wp_get_post: ' . (Plugin::opt('tool_wp_get_post', 1) ? 'On' : 'Off');
+        $lines[] = 'wp_search: ' . (Tools::is_enabled('wp_search') ? 'On' : 'Off');
+        $lines[] = 'wp_get_post: ' . (Tools::is_enabled('wp_get_post') ? 'On' : 'Off');
 
         if ($hasWoo) {
-            $lines[] = 'Woo cart tools: ' . (Plugin::opt('tool_woo_cart', 1) ? 'On' : 'Off');
+            $lines[] = 'Woo cart view: ' . (Tools::is_enabled('woo_cart_view') ? 'On' : 'Off');
+            $lines[] = 'Woo cart add: ' . (Tools::is_enabled('woo_cart_add') ? 'On' : 'Off');
         } else {
             $lines[] = 'Woo: Not active';
         }
@@ -68,6 +69,12 @@ final class AdminBar {
             $lines[] = 'PMPro: Paywall redaction On';
         } else {
             $lines[] = 'PMPro: Not active';
+        }
+
+        if (function_exists('buddypress') || defined('BP_VERSION') || class_exists('BuddyPress') || class_exists('BuddyBoss_Platform') || class_exists('BuddyBossPlatform')) {
+            $lines[] = 'bp_members: ' . (Tools::is_enabled('bp_members') ? 'On' : 'Off');
+        } else {
+            $lines[] = 'BuddyPress/BuddyBoss: Not active';
         }
 
         return $lines;

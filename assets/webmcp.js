@@ -1,250 +1,256 @@
 /**
- * WP WebMCP Layer - Frontend tool registration
- * - Registers WebMCP tools only when the browser supports the WebMCP API
- * - Calls WordPress REST endpoints (secured with X-WP-Nonce)
- * - Respects admin feature toggles passed via WP_WEBMCP.tools
+ * WP WebMCP Layer - browser bridge.
+ *
+ * The current WebMCP draft exposes document.modelContext.registerTool(). A
+ * legacy navigator.modelContext.provideContext() fallback is kept for early
+ * previews, but the plugin never requires either API to render the site.
  */
 (function () {
   "use strict";
 
-  function supported() {
-    return (
-      typeof window !== "undefined" &&
+  var MAX_RESULT_CHARS = 12000;
+
+  function config() {
+    return window.WP_WEBMCP || null;
+  }
+
+  function contextApi() {
+    if (
+      typeof document !== "undefined" &&
+      document.modelContext &&
+      typeof document.modelContext.registerTool === "function"
+    ) {
+      return { kind: "draft", context: document.modelContext };
+    }
+
+    if (
       window.navigator &&
       window.navigator.modelContext &&
       typeof window.navigator.modelContext.provideContext === "function"
-    );
+    ) {
+      return { kind: "legacy", context: window.navigator.modelContext };
+    }
+
+    return null;
   }
 
-  function hasToggle(key, fallback) {
+  function enabled(key) {
+    var cfg = config();
+    return !!(cfg && cfg.tools && Number(cfg.tools[key]) === 1);
+  }
+
+  function endpoint(path) {
+    var cfg = config();
+    var base = String((cfg && cfg.restUrl) || "").replace(/\/+$/, "");
+    return base + "/" + String(path || "").replace(/^\/+/, "");
+  }
+
+  function safeJson(value) {
     try {
-      if (!window.WP_WEBMCP || !WP_WEBMCP.tools) return !!fallback;
-      // WP localizes numeric 0/1; normalize to boolean
-      return !!Number(WP_WEBMCP.tools[key] ?? fallback);
+      return JSON.stringify(value);
     } catch (e) {
-      return !!fallback;
+      return String(value);
     }
   }
 
-  async function apiGet(path, params) {
-    var url = new URL(WP_WEBMCP.restUrl + path);
-    if (params && typeof params === "object") {
-      Object.keys(params).forEach(function (k) {
-        if (params[k] === undefined || params[k] === null) return;
-        url.searchParams.set(k, String(params[k]));
-      });
+  function result(value) {
+    var text = typeof value === "string" ? value : safeJson(value);
+    if (typeof text !== "string") text = String(text);
+    if (text.length <= MAX_RESULT_CHARS) return text;
+    return text.slice(0, MAX_RESULT_CHARS - 3) + "...";
+  }
+
+  function ensureActive(options) {
+    if (options && options.signal && options.signal.aborted) {
+      throw new Error("Tool execution was cancelled.");
+    }
+  }
+
+  async function parseResponse(response) {
+    var text = await response.text();
+    var data;
+
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch (e) {
+      data = { message: text };
     }
 
-    var res = await fetch(url.toString(), {
-      method: "GET",
-      headers: {
-        "X-WP-Nonce": WP_WEBMCP.nonce,
-      },
+    if (!response.ok) {
+      var message = data && (data.message || data.error);
+      throw new Error(message || "WebMCP request failed (HTTP " + response.status + ").");
+    }
+
+    return data;
+  }
+
+  async function apiRequest(method, path, input, options) {
+    var cfg = config();
+    var url = new URL(endpoint(path), window.location.href);
+
+    var upperMethod = String(method || "GET").toUpperCase();
+    var request = {
+      method: upperMethod,
+      headers: { "X-WP-Nonce": cfg.nonce },
       credentials: "same-origin",
-    });
-
-    if (!res.ok) {
-      throw new Error("HTTP " + res.status);
-    }
-    return res.json();
-  }
-
-  async function apiPost(path, body) {
-    var res = await fetch(WP_WEBMCP.restUrl + path, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-WP-Nonce": WP_WEBMCP.nonce,
-      },
-      credentials: "same-origin",
-      body: JSON.stringify(body || {}),
-    });
-
-    if (!res.ok) {
-      throw new Error("HTTP " + res.status);
-    }
-    return res.json();
-  }
-
-  function asText(text) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: String(text),
-        },
-      ],
+      signal: options && options.signal,
     };
-  }
 
-  function safeJson(obj) {
-    try {
-      return JSON.stringify(obj, null, 2);
-    } catch (e) {
-      return String(obj);
-    }
-  }
-
-  async function confirmAction(agent, message) {
-    // If agent supports user interaction requests, use that.
-    if (agent && typeof agent.requestUserInteraction === "function") {
-      return await agent.requestUserInteraction(function () {
-        return Promise.resolve(window.confirm(message));
+    if (upperMethod === "GET" || upperMethod === "HEAD") {
+      Object.keys(input || {}).forEach(function (key) {
+        if (input[key] === undefined || input[key] === null || input[key] === "") return;
+        url.searchParams.set(key, String(input[key]));
       });
+    } else {
+      request.headers["Content-Type"] = "application/json";
+      request.body = JSON.stringify(input || {});
     }
-    // Fallback: just confirm in the browser
-    return window.confirm(message);
+
+    var response = await fetch(url.toString(), request);
+
+    return parseResponse(response);
   }
+
+  async function apiGet(path, params, options) {
+    return apiRequest("GET", path, params, options);
+  }
+
+  async function apiPost(path, body, options) {
+    return apiRequest("POST", path, body, options);
+  }
+
+  async function confirmCartAdd(input, options) {
+    ensureActive(options);
+
+    if (typeof window.confirm !== "function") return false;
+
+    var productId = Number(input.product_id || 0);
+    var qty = Number(input.qty || 1);
+    return window.confirm("Add product " + productId + " (quantity " + qty + ") to the cart?");
+  }
+
+  var handlers = {
+    wp_search: async function (input, options) {
+      ensureActive(options);
+      var data = await apiGet("/search", { q: input.q, type: input.type }, options);
+      return result(data.results || data);
+    },
+
+    wp_get_post: async function (input, options) {
+      ensureActive(options);
+      var data = await apiGet("/post", { id: Number(input.id || 0) }, options);
+      return result(data);
+    },
+
+    woo_cart_view: async function (input, options) {
+      ensureActive(options);
+      var data = await apiGet("/cart/view", {}, options);
+      return result(data);
+    },
+
+    woo_cart_add: async function (input, options) {
+      if (!(await confirmCartAdd(input, options))) return "Cancelled by the user.";
+
+      var productId = Number(input.product_id || 0);
+      var qty = Math.max(1, Math.min(100, Number(input.qty || 1)));
+      var data = await apiPost("/cart/add", { product_id: productId, qty: qty }, options);
+      return result(data);
+    },
+  };
 
   function buildTools() {
+    var cfg = config();
+    var definitions = (cfg && cfg.definitions) || {};
     var tools = [];
 
-    // -----------------------------
-    // Tool: wp_search
-    // -----------------------------
-    if (hasToggle("wp_search", 1)) {
-      tools.push({
-        name: "wp_search",
-        description:
-          "Search site content. Returns posts/pages and (if WooCommerce is enabled) products. Paywalled items are flagged.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            q: { type: "string", description: "Search query text" },
-            type: {
-              type: "string",
-              description: "Optional: post|page|product",
-            },
-          },
-          required: ["q"],
-        },
-        execute: async function (input, agent) {
-          var q = (input && input.q) ? String(input.q) : "";
-          var type = input && input.type ? String(input.type) : undefined;
+    Object.keys(definitions).forEach(function (key) {
+      if (!enabled(key)) return;
 
-          var data = await apiGet("/search", { q: q, type: type });
-          return asText(safeJson(data.results || data));
+      var definition = definitions[key];
+      var execute = handlers[key];
+
+      // Integrations can register a REST-backed tool by supplying method and
+      // path in the shared definition. Built-in tools keep their explicit
+      // handlers for confirmation and response shaping.
+      if (typeof execute !== "function" && definition.path) {
+        execute = function (input, options) {
+          ensureActive(options);
+          return apiRequest(definition.method || "GET", definition.path, input, options).then(result);
+        };
+      }
+
+      if (typeof execute !== "function") return;
+
+      tools.push({
+        name: definition.name,
+        title: definition.title,
+        description: definition.description,
+        inputSchema: definition.inputSchema,
+        annotations: definition.annotations,
+        execute: function (input, options) {
+          return execute(input || {}, options || {});
         },
       });
-    }
-
-    // -----------------------------
-    // Tool: wp_get_post
-    // -----------------------------
-    if (hasToggle("wp_get_post", 1)) {
-      tools.push({
-        name: "wp_get_post",
-        description:
-          "Fetch a WordPress post/page by ID. If Paid Memberships Pro paywalls the content, returns only the title and a paywall notice.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            id: { type: "number", description: "WordPress post ID" },
-          },
-          required: ["id"],
-        },
-        execute: async function (input, agent) {
-          var id = input && input.id ? Number(input.id) : 0;
-          if (!id || Number.isNaN(id)) {
-            throw new Error("Invalid id");
-          }
-
-          var data = await apiGet("/post", { id: id });
-
-          if (data && data.paywalled) {
-            var msg =
-              (data.title ? data.title : "Paywalled content") +
-              "\n\n[PAYWALLED] " +
-              (data.message || "This content is behind a membership paywall.") +
-              "\n" +
-              (data.url || "");
-            return asText(msg);
-          }
-
-          var out =
-            (data.title ? data.title : "") +
-            "\n\n" +
-            (data.content ? data.content : "") +
-            (data.url ? "\n\n" + data.url : "");
-
-          return asText(out);
-        },
-      });
-    }
-
-    // -----------------------------
-    // WooCommerce tools (cart)
-    // -----------------------------
-    if (WP_WEBMCP.hasWoo && hasToggle("woo_cart", 1)) {
-      tools.push(
-        {
-          name: "woo_cart_view",
-          description: "View the current WooCommerce cart contents.",
-          inputSchema: { type: "object", properties: {}, required: [] },
-          execute: async function () {
-            var data = await apiGet("/cart/view", {});
-            return asText(safeJson(data.items || data));
-          },
-        },
-        {
-          name: "woo_cart_add",
-          description:
-            "Add a product to the WooCommerce cart. Requires user confirmation.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              product_id: { type: "number", description: "Woo product ID" },
-              qty: { type: "number", description: "Quantity (default 1)" },
-            },
-            required: ["product_id"],
-          },
-          execute: async function (input, agent) {
-            var product_id =
-              input && input.product_id ? Number(input.product_id) : 0;
-            var qty = input && input.qty ? Number(input.qty) : 1;
-
-            if (!product_id || Number.isNaN(product_id)) {
-              throw new Error("Invalid product_id");
-            }
-            if (!qty || Number.isNaN(qty) || qty < 1) qty = 1;
-
-            var ok = await confirmAction(
-              agent,
-              "Add product " + product_id + " (qty " + qty + ") to cart?"
-            );
-            if (!ok) return asText("Cancelled by user.");
-
-            var data = await apiPost("/cart/add", {
-              product_id: product_id,
-              qty: qty,
-            });
-
-            return asText(data.message || "Added to cart.");
-          },
-        }
-      );
-    }
+    });
 
     return tools;
   }
 
-  async function init() {
-    if (!window.WP_WEBMCP || !WP_WEBMCP.restUrl) return;
-    if (!supported()) return;
+  async function registerTools(api, tools) {
+    var cfg = config();
 
-    // master toggle is enforced in PHP enqueue, but keep a guard anyway
-    if (WP_WEBMCP.tools && Number(WP_WEBMCP.tools.enabled) === 0) return;
+    if (cfg._registered) return;
+
+    if (api.kind === "draft") {
+      var controller = new AbortController();
+
+      for (var i = 0; i < tools.length; i += 1) {
+        await api.context.registerTool(tools[i], { signal: controller.signal });
+      }
+
+      cfg._abortController = controller;
+      window.addEventListener(
+        "pagehide",
+        function () {
+          controller.abort();
+        },
+        { once: true }
+      );
+    } else {
+      // Early WebMCP previews used MCP content envelopes. Keep that adapter
+      // isolated so the current draft API receives the plain serializable
+      // result returned by each tool.
+      var legacyTools = tools.map(function (tool) {
+        return Object.assign({}, tool, {
+          execute: async function (input, options) {
+            var value = await tool.execute(input, options);
+            return { content: [{ type: "text", text: result(value) }] };
+          },
+        });
+      });
+      await api.context.provideContext({ tools: legacyTools });
+    }
+
+    cfg._registered = true;
+  }
+
+  async function init() {
+    var cfg = config();
+    var api = contextApi();
+
+    if (!cfg || !api || Number((cfg.tools || {}).enabled) === 0) return;
 
     var tools = buildTools();
     if (!tools.length) return;
 
-    // Register the tool bundle via WebMCP
     try {
-      await window.navigator.modelContext.provideContext({ tools: tools });
-    } catch (e) {
-      // Fail silently; don’t break site if WebMCP API changes
-      // Optionally log in dev:
-      // console.warn("WebMCP provideContext failed:", e);
+      await registerTools(api, tools);
+    } catch (error) {
+      // WebMCP is progressive enhancement; never break the site if a browser
+      // preview rejects a schema or changes the draft API.
+      if (window.console && typeof window.console.warn === "function") {
+        window.console.warn("WP WebMCP registration failed:", error);
+      }
     }
   }
 

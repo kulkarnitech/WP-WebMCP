@@ -24,9 +24,10 @@ final class REST {
                 'args' => [
                     'id' => [
                         'required' => true,
+                        'sanitize_callback' => 'absint',
                         'validate_callback' => static function ($param) {
-                            return is_numeric($param) && (int)$param > 0;
-                        }
+                            return is_scalar($param) && (string) absint($param) === (string) $param && (int) $param > 0;
+                        },
                     ],
                 ],
             ]);
@@ -38,8 +39,22 @@ final class REST {
                     return self::permission_for_tool($req, 'wp_search', false);
                 },
                 'args' => [
-                    'q' => ['required' => true],
-                    'type' => ['required' => false],
+                    'q' => [
+                        'required' => true,
+                        'sanitize_callback' => static function ($param) {
+                            return mb_substr(sanitize_text_field((string) $param), 0, 200);
+                        },
+                        'validate_callback' => static function ($param) {
+                            return is_scalar($param) && trim((string) $param) !== '' && mb_strlen((string) $param) <= 200;
+                        },
+                    ],
+                    'type' => [
+                        'required' => false,
+                        'sanitize_callback' => 'sanitize_key',
+                        'validate_callback' => static function ($param) {
+                            return in_array((string) $param, ['', 'post', 'page', 'product'], true);
+                        },
+                    ],
                 ],
             ]);
 
@@ -62,9 +77,36 @@ final class REST {
                         // Nonce required (same-origin), plus tool + cap gate
                         return self::permission_for_tool($req, 'woo_cart_add', true);
                     },
+                    'args' => [
+                        'product_id' => [
+                            'required' => true,
+                            'sanitize_callback' => 'absint',
+                            'validate_callback' => static function ($param) {
+                                return is_scalar($param) && (int) $param > 0;
+                            },
+                        ],
+                        'qty' => [
+                            'required' => false,
+                            'default' => 1,
+                            'sanitize_callback' => 'absint',
+                            'validate_callback' => static function ($param) {
+                                return is_scalar($param) && (int) $param >= 1 && (int) $param <= 100;
+                            },
+                        ],
+                    ],
                 ]);
             }
         });
+    }
+
+    /**
+     * Shared authorization entry point for integration adapters.
+     *
+     * Adapters should use this instead of duplicating toggle, capability, and
+     * rate-limit checks. The nonce flag remains explicit per route.
+     */
+    public static function authorize_tool(WP_REST_Request $req, string $tool, bool $require_nonce = false) {
+        return self::permission_for_tool($req, $tool, $require_nonce);
     }
 
     /**
@@ -82,8 +124,7 @@ final class REST {
         }
 
         // Tool toggle mapping (admin options)
-        $toolEnabled = self::is_tool_enabled($tool);
-        if (!$toolEnabled) {
+        if (!Tools::is_enabled($tool)) {
             return new WP_Error('webmcp_tool_disabled', 'Tool is disabled.', ['status' => 403]);
         }
 
@@ -94,7 +135,7 @@ final class REST {
         }
 
         // Capability gate
-        $cap = self::required_cap_for_tool($tool);
+        $cap = Tools::required_capability($tool);
         if ($cap !== '') {
             if (!is_user_logged_in()) {
                 return new WP_Error('webmcp_auth_required', 'Login required.', ['status' => 401]);
@@ -113,45 +154,6 @@ final class REST {
         }
 
         return true;
-    }
-
-    private static function is_tool_enabled(string $tool): bool {
-        switch ($tool) {
-            case 'wp_search':
-                return (bool) Plugin::opt('tool_wp_search', 1);
-
-            case 'wp_get_post':
-                return (bool) Plugin::opt('tool_wp_get_post', 1);
-
-            case 'woo_cart_view':
-                // only meaningful if Woo active
-                return class_exists('WooCommerce') && (bool) Plugin::opt('tool_woo_cart_view', 1);
-
-            case 'woo_cart_add':
-                return class_exists('WooCommerce') && (bool) Plugin::opt('tool_woo_cart_add', 1);
-
-            default:
-                return false;
-        }
-    }
-
-    private static function required_cap_for_tool(string $tool): string {
-        switch ($tool) {
-            case 'wp_search':
-                return (string) Plugin::opt('cap_wp_search', '');
-
-            case 'wp_get_post':
-                return (string) Plugin::opt('cap_wp_get_post', '');
-
-            case 'woo_cart_view':
-                return (string) Plugin::opt('cap_woo_cart_view', 'read');
-
-            case 'woo_cart_add':
-                return (string) Plugin::opt('cap_woo_cart_add', 'read');
-
-            default:
-                return '';
-        }
     }
 
     /**
@@ -245,7 +247,7 @@ final class REST {
      * =====================================================
      */
     public static function search(WP_REST_Request $req): WP_REST_Response {
-        $q    = sanitize_text_field((string) $req->get_param('q'));
+        $q    = mb_substr(sanitize_text_field((string) $req->get_param('q')), 0, 200);
         $type = sanitize_key((string) ($req->get_param('type') ?: 'post'));
 
         $args = [
@@ -256,6 +258,10 @@ final class REST {
 
         if ($type === 'product' && class_exists('WooCommerce')) {
             $args['post_type'] = 'product';
+        } elseif ($type === 'page') {
+            $args['post_type'] = 'page';
+        } elseif ($type === 'post') {
+            $args['post_type'] = 'post';
         } else {
             $args['post_type'] = ['post', 'page'];
         }
@@ -326,10 +332,15 @@ final class REST {
         }
 
         $product_id = absint($req->get_param('product_id'));
-        $qty        = max(1, absint($req->get_param('qty') ?: 1));
+        $qty        = min(100, max(1, absint($req->get_param('qty') ?: 1)));
 
         if (!$product_id) {
             return new WP_REST_Response(['error' => 'Missing product_id'], 400);
+        }
+
+        $product = wc_get_product($product_id);
+        if (!$product || !$product->is_purchasable()) {
+            return new WP_REST_Response(['error' => 'Product is not available for purchase'], 400);
         }
 
         $added = WC()->cart->add_to_cart($product_id, $qty);

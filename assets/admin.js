@@ -2,7 +2,11 @@
   "use strict";
 
   function supported() {
-    return (
+    return !!(
+      typeof document !== "undefined" &&
+      document.modelContext &&
+      typeof document.modelContext.registerTool === "function"
+    ) || !!(
       typeof window !== "undefined" &&
       window.navigator &&
       window.navigator.modelContext &&
@@ -31,7 +35,7 @@
         el,
         ok,
         ok
-          ? "This browser exposes navigator.modelContext.provideContext()."
+          ? "This browser exposes document.modelContext.registerTool() or a legacy WebMCP preview API."
           : "This browser does not expose WebMCP APIs yet (plugin will no-op on frontend)."
       );
     } catch (e) {

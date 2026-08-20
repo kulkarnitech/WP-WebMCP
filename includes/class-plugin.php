@@ -32,10 +32,12 @@ final class Plugin {
         require_once WP_WEBMCP_LAYER_PATH . 'includes/class-admin.php';
         require_once WP_WEBMCP_LAYER_PATH . 'includes/class-adminbar.php';
         require_once WP_WEBMCP_LAYER_PATH . 'includes/class-rest.php';
+        require_once WP_WEBMCP_LAYER_PATH . 'includes/class-tools.php';
 
         Admin::init();
         AdminBar::init();
         REST::init();
+        Tools::init();
 
         // Integrations (load only when active)
         if ($this->has_pmpro) {
@@ -46,6 +48,11 @@ final class Plugin {
         if ($this->has_woo) {
             require_once WP_WEBMCP_LAYER_PATH . 'includes/class-woocommerce.php';
             WooCommerce::init();
+        }
+
+        if (function_exists('buddypress') || defined('BP_VERSION') || class_exists('BuddyPress') || class_exists('BuddyBoss_Platform') || class_exists('BuddyBossPlatform')) {
+            require_once WP_WEBMCP_LAYER_PATH . 'includes/class-community.php';
+            Community::init();
         }
 
         add_action('wp_enqueue_scripts', [$this, 'enqueue_assets']);
@@ -81,20 +88,16 @@ final class Plugin {
         if (!self::opt('enabled', 1)) return;
 
         // Determine tool toggles AND cap gates (so we don't advertise tools the user can't use)
-        $wp_search_on     = (bool) self::opt('tool_wp_search', 1)     && self::visitor_meets_cap_gate((string) self::opt('cap_wp_search', ''));
-        $wp_get_post_on   = (bool) self::opt('tool_wp_get_post', 1)   && self::visitor_meets_cap_gate((string) self::opt('cap_wp_get_post', ''));
-
-        $woo_cart_view_on = $this->has_woo
-            && (bool) self::opt('tool_woo_cart_view', 1)
-            && self::visitor_meets_cap_gate((string) self::opt('cap_woo_cart_view', 'read'));
-
-        $woo_cart_add_on  = $this->has_woo
-            && (bool) self::opt('tool_woo_cart_add', 1)
-            && self::visitor_meets_cap_gate((string) self::opt('cap_woo_cart_add', 'read'));
+        $definitions = Tools::frontend_definitions();
 
         // If no tools are enabled for this visitor, skip enqueue to keep frontend clean
-        if (!$wp_search_on && !$wp_get_post_on && !$woo_cart_view_on && !$woo_cart_add_on) {
+        if (!$definitions) {
             return;
+        }
+
+        $tool_flags = ['enabled' => 1];
+        foreach (array_keys($definitions) as $key) {
+            $tool_flags[$key] = 1;
         }
 
         wp_enqueue_script(
@@ -113,14 +116,14 @@ final class Plugin {
             'hasWoo'   => $this->has_woo,
             'hasPMPro' => $this->has_pmpro,
 
-            // tool exposure (already cap-gated here)
-            'tools' => [
-                'enabled'       => 1,
-                'wp_search'     => $wp_search_on ? 1 : 0,
-                'wp_get_post'   => $wp_get_post_on ? 1 : 0,
-                'woo_cart_view' => $woo_cart_view_on ? 1 : 0,
-                'woo_cart_add'  => $woo_cart_add_on ? 1 : 0,
-            ],
+            // The current WebMCP draft exposes document.modelContext. The
+            // legacy provider is retained only as a compatibility fallback.
+            'api'      => 'document.modelContext',
+
+            // Tool exposure (already toggle/integration/capability-gated here).
+            // Keep this dynamic so third-party registry adapters are exposed.
+            'tools'       => $tool_flags,
+            'definitions' => $definitions,
         ]);
     }
 }

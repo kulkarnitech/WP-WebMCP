@@ -12,7 +12,6 @@ final class PMPro {
         // If PMPro not installed, treat as public.
         if (!function_exists('pmpro_has_membership_access')) return true;
 
-        $user = $user_id ? get_user_by('id', $user_id) : wp_get_current_user();
         $post = get_post($post_id);
         if (!$post) return false;
 

@@ -54,12 +54,14 @@ final class Admin {
                 'tool_wp_get_post'     => 1,
                 'tool_woo_cart_view'   => 1,
                 'tool_woo_cart_add'    => 1,
+                'tool_bp_members'     => 1,
 
                 // Role/cap gates for tool *exposure* (frontend) + intended REST enforcement
                 'cap_wp_search'        => '',
                 'cap_wp_get_post'      => '',
                 'cap_woo_cart_view'    => 'read',
                 'cap_woo_cart_add'     => 'read',
+                'cap_bp_members'      => 'read',
 
                 // Rate limiting (intended for REST; UI + option storage here)
                 'rate_limit_enabled'   => 1,
@@ -98,6 +100,7 @@ final class Admin {
         self::add_checkbox('tool_wp_get_post', 'Tool: wp_get_post', 'Expose post retrieval tool (PMPro paywall redaction applies if active).');
         self::add_checkbox('tool_woo_cart_view', 'Tool: woo_cart_view', 'Expose Woo cart view tool (requires WooCommerce).');
         self::add_checkbox('tool_woo_cart_add', 'Tool: woo_cart_add', 'Expose Woo add-to-cart tool (requires WooCommerce; should be user-confirmed).');
+        self::add_checkbox('tool_bp_members', 'Tool: bp_members', 'Expose BuddyPress/BuddyBoss member search (requires the community plugin).');
 
         // =======================
         // Role / capability gates
@@ -116,6 +119,7 @@ final class Admin {
         self::add_capability_select('cap_wp_get_post', 'Capability required: wp_get_post', 'Who can see/use wp_get_post tool.');
         self::add_capability_select('cap_woo_cart_view', 'Capability required: woo_cart_view', 'Who can see/use cart viewing tool.');
         self::add_capability_select('cap_woo_cart_add', 'Capability required: woo_cart_add', 'Who can see/use add-to-cart tool.');
+        self::add_capability_select('cap_bp_members', 'Capability required: bp_members', 'Who can see/use community member search.');
 
         // =======================
         // Rate limiting settings
@@ -206,10 +210,11 @@ final class Admin {
         $out['tool_wp_get_post']   = !empty($input['tool_wp_get_post']) ? 1 : 0;
         $out['tool_woo_cart_view'] = !empty($input['tool_woo_cart_view']) ? 1 : 0;
         $out['tool_woo_cart_add']  = !empty($input['tool_woo_cart_add']) ? 1 : 0;
+        $out['tool_bp_members']    = !empty($input['tool_bp_members']) ? 1 : 0;
 
         // Capability gates (must be from whitelist)
         $choices = self::capability_choices();
-        $capKeys = ['cap_wp_search','cap_wp_get_post','cap_woo_cart_view','cap_woo_cart_add'];
+        $capKeys = ['cap_wp_search','cap_wp_get_post','cap_woo_cart_view','cap_woo_cart_add','cap_bp_members'];
         foreach ($capKeys as $k) {
             $v = isset($input[$k]) ? sanitize_text_field((string)$input[$k]) : '';
             $out[$k] = array_key_exists($v, $choices) ? $v : '';
@@ -236,75 +241,11 @@ final class Admin {
     }
 
     /**
-     * Tool schemas (shown in admin for documentation/preview).
-     * Keep in sync with assets/webmcp.js
+     * Tool definitions shown in the admin for documentation/preview.
+     * The central registry is also the source for frontend registration.
      */
     private static function tool_schemas(): array {
-        return [
-            'wp_search' => [
-                'name' => 'wp_search',
-                'description' => 'Search site content. Returns posts/pages and (if WooCommerce is enabled) products. Paywalled items are flagged.',
-                'inputSchema' => [
-                    'type' => 'object',
-                    'properties' => [
-                        'q' => ['type' => 'string', 'description' => 'Search query text'],
-                        'type' => ['type' => 'string', 'description' => 'Optional: post|page|product'],
-                    ],
-                    'required' => ['q'],
-                ],
-                'endpoint' => [
-                    'method' => 'GET',
-                    'path'   => '/webmcp/v1/search?q=...&type=...',
-                ],
-            ],
-            'wp_get_post' => [
-                'name' => 'wp_get_post',
-                'description' => 'Fetch a WordPress post/page by ID. If PMPro paywalls the content, returns only title + paywall notice.',
-                'inputSchema' => [
-                    'type' => 'object',
-                    'properties' => [
-                        'id' => ['type' => 'number', 'description' => 'WordPress post ID'],
-                    ],
-                    'required' => ['id'],
-                ],
-                'endpoint' => [
-                    'method' => 'GET',
-                    'path'   => '/webmcp/v1/post?id=123',
-                ],
-            ],
-            'woo_cart_view' => [
-                'name' => 'woo_cart_view',
-                'description' => 'View the current WooCommerce cart contents.',
-                'inputSchema' => [
-                    'type' => 'object',
-                    'properties' => (object)[],
-                    'required' => [],
-                ],
-                'endpoint' => [
-                    'method' => 'GET',
-                    'path'   => '/webmcp/v1/cart/view',
-                    'headers'=> ['X-WP-Nonce: <wp_rest_nonce>'],
-                ],
-            ],
-            'woo_cart_add' => [
-                'name' => 'woo_cart_add',
-                'description' => 'Add a product to the WooCommerce cart. Requires user confirmation.',
-                'inputSchema' => [
-                    'type' => 'object',
-                    'properties' => [
-                        'product_id' => ['type' => 'number', 'description' => 'Woo product ID'],
-                        'qty'        => ['type' => 'number', 'description' => 'Quantity (default 1)'],
-                    ],
-                    'required' => ['product_id'],
-                ],
-                'endpoint' => [
-                    'method' => 'POST',
-                    'path'   => '/webmcp/v1/cart/add',
-                    'headers'=> ['X-WP-Nonce: <wp_rest_nonce>'],
-                    'body'   => ['product_id' => 123, 'qty' => 1],
-                ],
-            ],
-        ];
+        return Tools::frontend_definitions(false);
     }
 
     public static function render(): void {
@@ -315,14 +256,13 @@ final class Admin {
 
         $hasWoo   = class_exists('WooCommerce');
         $hasPMPro = function_exists('pmpro_has_membership_access');
+        $hasCommunity = function_exists('buddypress') || defined('BP_VERSION') || class_exists('BuddyPress') || class_exists('BuddyBoss_Platform') || class_exists('BuddyBossPlatform');
 
         // Derived tool enablement (layer + toggle + integration)
-        $toolStatus = [
-            'wp_search' => $enabled && !empty($opts['tool_wp_search']),
-            'wp_get_post' => $enabled && !empty($opts['tool_wp_get_post']),
-            'woo_cart_view' => $enabled && $hasWoo && !empty($opts['tool_woo_cart_view']),
-            'woo_cart_add' => $enabled && $hasWoo && !empty($opts['tool_woo_cart_add']),
-        ];
+        $toolStatus = [];
+        foreach (Tools::frontend_definitions(false) as $toolKey => $definition) {
+            $toolStatus[$toolKey] = $enabled && Tools::is_enabled($toolKey);
+        }
 
         // Debug info payload (server-side)
         $debug = [
@@ -333,6 +273,7 @@ final class Admin {
             'integrations' => [
                 'woocommerce_active' => $hasWoo,
                 'pmpro_active' => $hasPMPro,
+                'community_active' => $hasCommunity,
             ],
             'settings' => $opts,
             'tool_status' => $toolStatus,
@@ -350,6 +291,7 @@ final class Admin {
         echo '<ul style="list-style:disc; padding-left:20px;">';
         echo '<li>WooCommerce: <strong>' . ($hasWoo ? 'Active' : 'Not active') . '</strong></li>';
         echo '<li>Paid Memberships Pro: <strong>' . ($hasPMPro ? 'Active' : 'Not active') . '</strong></li>';
+        echo '<li>BuddyPress/BuddyBoss: <strong>' . ($hasCommunity ? 'Active' : 'Not active') . '</strong></li>';
         echo '</ul>';
 
         // =======================
@@ -395,6 +337,14 @@ final class Admin {
             ],
         ];
 
+        if (isset($toolStatus['bp_members'])) {
+            $rows[] = [
+                'name' => 'bp_members',
+                'status' => $toolStatus['bp_members'],
+                'note' => $hasCommunity ? 'BuddyPress/BuddyBoss active: uses its permission-aware REST controller.' : 'Community plugin not active: tool not registered.',
+            ];
+        }
+
         foreach ($rows as $r) {
             $statusText = $r['status'] ? 'Enabled' : 'Disabled';
             echo '<tr>';
@@ -409,7 +359,7 @@ final class Admin {
         // JSON schema preview
         // =======================
         echo '<h2>Tool Schema Preview</h2>';
-        echo '<p>These are the schemas your frontend tool registration should match.</p>';
+        echo '<p>These are the definitions used by frontend registration and optional WordPress Abilities.</p>';
         echo '<div style="max-width:980px;">';
         foreach (self::tool_schemas() as $toolKey => $schema) {
             echo '<details style="background:#fff; border:1px solid #c3c4c7; border-radius:6px; padding:10px 12px; margin:10px 0;">';
