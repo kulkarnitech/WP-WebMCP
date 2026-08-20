@@ -25,9 +25,26 @@ final class Admin {
     }
 
     public static function init(): void {
+        self::maybe_migrate_options();
         add_action('admin_menu', [__CLASS__, 'menu']);
         add_action('admin_init', [__CLASS__, 'settings']);
         add_action('admin_enqueue_scripts', [__CLASS__, 'enqueue_admin_assets']);
+    }
+
+    /**
+     * Preserve existing settings while tightening legacy mutation defaults.
+     */
+    private static function maybe_migrate_options(): void {
+        $options = get_option(self::OPTION_KEY, []);
+        if (!is_array($options) || (int) ($options['_schema_version'] ?? 0) >= 2) return;
+
+        if (!array_key_exists('cap_woo_cart_remove', $options)) $options['cap_woo_cart_remove'] = 'read';
+        if (!array_key_exists('cap_woo_coupon_apply', $options)) $options['cap_woo_coupon_apply'] = 'read';
+        if (!array_key_exists('cap_bp_activity_create', $options) || $options['cap_bp_activity_create'] === 'read') {
+            $options['cap_bp_activity_create'] = 'publish_posts';
+        }
+        $options['_schema_version'] = 2;
+        update_option(self::OPTION_KEY, $options);
     }
 
     public static function menu(): void {
@@ -48,6 +65,7 @@ final class Admin {
             'default'           => [
                 // Master
                 'enabled'              => 1,
+                '_schema_version'     => 2,
 
                 // Tool toggles
                 'tool_wp_search'       => 1,
@@ -74,11 +92,13 @@ final class Admin {
                 'cap_wp_get_post'      => '',
                 'cap_woo_cart_view'    => 'read',
                 'cap_woo_cart_add'     => 'read',
+                'cap_woo_cart_remove'  => 'read',
+                'cap_woo_coupon_apply' => 'read',
                 'cap_bp_members'      => 'read',
                 'cap_pmpro_memberships' => 'read',
                 'cap_bp_groups' => 'read',
                 'cap_bp_activity' => 'read',
-                'cap_bp_activity_create' => 'read',
+                'cap_bp_activity_create' => 'publish_posts',
 
                 // Rate limiting (intended for REST; UI + option storage here)
                 'rate_limit_enabled'   => 1,
@@ -144,6 +164,8 @@ final class Admin {
         self::add_capability_select('cap_wp_get_post', 'Capability required: wp_get_post', 'Who can see/use wp_get_post tool.');
         self::add_capability_select('cap_woo_cart_view', 'Capability required: woo_cart_view', 'Who can see/use cart viewing tool.');
         self::add_capability_select('cap_woo_cart_add', 'Capability required: woo_cart_add', 'Who can see/use add-to-cart tool.');
+        self::add_capability_select('cap_woo_cart_remove', 'Capability required: woo_cart_remove', 'Who can see/use cart removal tool.');
+        self::add_capability_select('cap_woo_coupon_apply', 'Capability required: woo_coupon_apply', 'Who can see/use coupon application tool.');
         self::add_capability_select('cap_bp_members', 'Capability required: bp_members', 'Who can see/use community member search.');
         foreach (['pmpro_memberships', 'bp_groups', 'bp_activity', 'bp_activity_create'] as $tool) {
             self::add_capability_select('cap_' . $tool, 'Capability required: ' . $tool, 'Who can see/use this tool.');
@@ -156,7 +178,7 @@ final class Admin {
             'wp_webmcp_ratelimit',
             'REST Rate Limiting',
             function () {
-                echo '<p>Basic rate limiting for WebMCP REST endpoints (per IP). Helps prevent abuse.</p>';
+                echo '<p>Rate limiting for WebMCP REST and native Ability execution, scoped by principal and tool. Helps prevent abuse.</p>';
                 echo '<p><strong>Note:</strong> This requires server-side checks in the REST handlers. These options store the configuration.</p>';
             },
             self::PAGE_SLUG
@@ -164,9 +186,9 @@ final class Admin {
 
         self::add_checkbox('rate_limit_enabled', 'Enable rate limiting', 'Apply rate limiting to WebMCP REST endpoints.');
         self::add_number('rate_limit_window', 'Window (seconds)', 'Time window for counting requests (e.g., 60).', 10, 86400);
-        self::add_number('rate_limit_max', 'Max requests per window', 'Max requests per IP per window (e.g., 60).', 1, 100000);
-        self::add_checkbox('rate_limit_global_enabled', 'Enable global rate limiting', 'Apply a site-wide request ceiling in addition to the per-IP limit.', 'wp_webmcp_ratelimit');
-        self::add_number('rate_limit_global_max', 'Global max requests per window', 'Maximum WebMCP requests for the whole site in one window.', 1, 100000);
+        self::add_number('rate_limit_max', 'Max requests per window', 'Max requests per principal and tool per window (e.g., 60).', 1, 100000);
+        self::add_checkbox('rate_limit_global_enabled', 'Enable pooled rate limiting', 'Apply an authenticated/anonymous pool ceiling in addition to the per-principal limit.', 'wp_webmcp_ratelimit');
+        self::add_number('rate_limit_global_max', 'Pool max requests per window', 'Maximum WebMCP requests for one caller class in a window.', 1, 100000);
         self::add_number('request_size_limit', 'Maximum request size (bytes)', 'Reject oversized WebMCP inputs before tool execution.', 1024, 1048576);
         self::add_number('schema_max_depth', 'Maximum input nesting depth', 'Bounds nested native-ability input validation.', 2, 16);
         self::add_number('idempotency_ttl', 'Idempotency cache (seconds)', 'How long mutation replay responses are retained.', 60, 86400);
@@ -235,36 +257,58 @@ final class Admin {
 
     public static function sanitize($input): array {
         $out = [];
+        $input = is_array($input) ? $input : [];
+        $existing = get_option(self::OPTION_KEY, []);
+        $existing = is_array($existing) ? $existing : [];
+        $value = static function (string $key, $default) use ($input, $existing) {
+            if (array_key_exists($key, $input)) return $input[$key];
+            return array_key_exists($key, $existing) ? $existing[$key] : $default;
+        };
 
         // Master + toggles
-        $out['enabled']            = !empty($input['enabled']) ? 1 : 0;
+        $out['enabled']            = !empty($value('enabled', 1)) ? 1 : 0;
 
-        $out['tool_wp_search']     = !empty($input['tool_wp_search']) ? 1 : 0;
-        $out['tool_wp_get_post']   = !empty($input['tool_wp_get_post']) ? 1 : 0;
-        $out['tool_woo_cart_view'] = !empty($input['tool_woo_cart_view']) ? 1 : 0;
-        $out['tool_woo_cart_add']  = !empty($input['tool_woo_cart_add']) ? 1 : 0;
-        $out['tool_bp_members']    = !empty($input['tool_bp_members']) ? 1 : 0;
+        $out['tool_wp_search']     = !empty($value('tool_wp_search', 1)) ? 1 : 0;
+        $out['tool_wp_get_post']   = !empty($value('tool_wp_get_post', 1)) ? 1 : 0;
+        $out['tool_woo_cart_view'] = !empty($value('tool_woo_cart_view', 1)) ? 1 : 0;
+        $out['tool_woo_cart_add']  = !empty($value('tool_woo_cart_add', 1)) ? 1 : 0;
+        $out['tool_bp_members']    = !empty($value('tool_bp_members', 1)) ? 1 : 0;
         foreach (['wp_get_menu', 'wp_get_categories', 'wp_get_site_info', 'woo_product_search', 'woo_product_get', 'woo_product_categories', 'woo_checkout_fields', 'woo_cart_remove', 'woo_coupon_apply', 'pmpro_memberships', 'bp_groups', 'bp_activity', 'bp_activity_create'] as $tool) {
-            $out['tool_' . $tool] = !empty($input['tool_' . $tool]) ? 1 : 0;
+            $default = $tool === 'bp_activity_create' ? 0 : 1;
+            $out['tool_' . $tool] = !empty($value('tool_' . $tool, $default)) ? 1 : 0;
         }
 
         // Capability gates (must be from whitelist)
         $choices = self::capability_choices();
-        $capKeys = ['cap_wp_search','cap_wp_get_post','cap_woo_cart_view','cap_woo_cart_add','cap_bp_members','cap_pmpro_memberships','cap_bp_groups','cap_bp_activity','cap_bp_activity_create'];
+        $capDefaults = [
+            'cap_wp_search' => '',
+            'cap_wp_get_post' => '',
+            'cap_woo_cart_view' => 'read',
+            'cap_woo_cart_add' => 'read',
+            'cap_woo_cart_remove' => 'read',
+            'cap_woo_coupon_apply' => 'read',
+            'cap_bp_members' => 'read',
+            'cap_pmpro_memberships' => 'read',
+            'cap_bp_groups' => 'read',
+            'cap_bp_activity' => 'read',
+            'cap_bp_activity_create' => 'publish_posts',
+        ];
+        $capKeys = array_keys($capDefaults);
         foreach ($capKeys as $k) {
-            $v = isset($input[$k]) ? sanitize_text_field((string)$input[$k]) : '';
-            $out[$k] = array_key_exists($v, $choices) ? $v : '';
+            $v = sanitize_text_field((string) $value($k, $capDefaults[$k]));
+            $out[$k] = array_key_exists($v, $choices) ? $v : $capDefaults[$k];
         }
 
         // Rate limiting
-        $out['rate_limit_enabled'] = !empty($input['rate_limit_enabled']) ? 1 : 0;
-        $out['rate_limit_window']  = isset($input['rate_limit_window']) ? max(10, min(86400, (int)$input['rate_limit_window'])) : 60;
-        $out['rate_limit_max']     = isset($input['rate_limit_max']) ? max(1, min(100000, (int)$input['rate_limit_max'])) : 60;
-        $out['rate_limit_global_enabled'] = !empty($input['rate_limit_global_enabled']) ? 1 : 0;
-        $out['rate_limit_global_max'] = isset($input['rate_limit_global_max']) ? max(1, min(100000, (int) $input['rate_limit_global_max'])) : 120;
-        $out['request_size_limit'] = isset($input['request_size_limit']) ? max(1024, min(1048576, (int) $input['request_size_limit'])) : 102400;
-        $out['schema_max_depth'] = isset($input['schema_max_depth']) ? max(2, min(16, (int) $input['schema_max_depth'])) : 8;
-        $out['idempotency_ttl'] = isset($input['idempotency_ttl']) ? max(60, min(86400, (int) $input['idempotency_ttl'])) : 300;
+        $out['rate_limit_enabled'] = !empty($value('rate_limit_enabled', 1)) ? 1 : 0;
+        $out['rate_limit_window']  = max(10, min(86400, (int) $value('rate_limit_window', 60)));
+        $out['rate_limit_max']     = max(1, min(100000, (int) $value('rate_limit_max', 60)));
+        $out['rate_limit_global_enabled'] = !empty($value('rate_limit_global_enabled', 1)) ? 1 : 0;
+        $out['rate_limit_global_max'] = max(1, min(100000, (int) $value('rate_limit_global_max', 120)));
+        $out['request_size_limit'] = max(1024, min(1048576, (int) $value('request_size_limit', 102400)));
+        $out['schema_max_depth'] = max(2, min(16, (int) $value('schema_max_depth', 8)));
+        $out['idempotency_ttl'] = max(60, min(86400, (int) $value('idempotency_ttl', 300)));
+        $out['_schema_version'] = 2;
 
         return $out;
     }

@@ -119,6 +119,40 @@ final class REST {
     }
 
     /**
+     * Apply the shared server-side policy to a native WordPress Ability.
+     * Native Abilities do not carry a REST nonce, but they must still receive
+     * the same size, toggle, capability, and abuse-control enforcement.
+     *
+     * @param array<string,mixed> $input
+     */
+    public static function authorize_native_tool(string $tool, array $input = []) {
+        if (!Plugin::opt('enabled', 1)) {
+            return new WP_Error('webmcp_disabled', 'WebMCP layer is disabled.', ['status' => 403]);
+        }
+
+        if (!Tools::is_enabled($tool)) {
+            return new WP_Error('webmcp_tool_disabled', 'Tool is disabled.', ['status' => 403]);
+        }
+
+        $size_check = self::request_size_check_input($input);
+        if ($size_check instanceof WP_Error) {
+            return $size_check;
+        }
+
+        $cap = Tools::required_capability($tool);
+        if ($cap !== '') {
+            if (!is_user_logged_in()) {
+                return new WP_Error('webmcp_auth_required', 'Login required.', ['status' => 401]);
+            }
+            if (!current_user_can($cap)) {
+                return new WP_Error('webmcp_forbidden', 'Insufficient permissions.', ['status' => 403]);
+            }
+        }
+
+        return self::rate_limit_check($tool);
+    }
+
+    /**
      * Execute a state-changing callback with replay protection when the caller
      * supplies X-WebMCP-Idempotency-Key (or idempotency_key in JSON input).
      *
@@ -128,15 +162,32 @@ final class REST {
     public static function with_idempotency(WP_REST_Request $req, string $tool, callable $callback) {
         $key = self::idempotency_key($req);
         $cache_key = '';
+        $lock_key = '';
+        $fingerprint = '';
+        $lock_acquired = false;
         if ($key !== '') {
-            $identity = is_user_logged_in() ? 'user:' . get_current_user_id() : 'ip:' . self::client_ip();
-            $cache_key = 'webmcp_idem_' . md5($tool . '|' . $identity . '|' . $key);
-            $cached = get_transient($cache_key);
-            if (is_array($cached) && isset($cached['data'], $cached['status'])) {
-                $response = new WP_REST_Response($cached['data'], (int) $cached['status']);
-                $response->header('X-WebMCP-Idempotent-Replay', '1');
-                self::audit($tool, 'replay', 0);
-                return $response;
+            $identity = self::idempotency_identity($req);
+            // Do not share anonymous replay records between callers that do
+            // not present a stable browser/session cookie.
+            if ($identity !== '') {
+                $fingerprint = self::request_fingerprint($req, $tool);
+                $cache_key = 'webmcp_idem_' . md5($tool . '|' . $identity . '|' . $key);
+                $cached = get_transient($cache_key);
+                if (is_array($cached) && isset($cached['data'], $cached['status'])) {
+                    if (!empty($cached['fingerprint']) && !hash_equals((string) $cached['fingerprint'], $fingerprint)) {
+                        return new WP_Error('webmcp_idempotency_conflict', 'The idempotency key was reused with different input.', ['status' => 409]);
+                    }
+                    $response = new WP_REST_Response($cached['data'], (int) $cached['status']);
+                    $response->header('X-WebMCP-Idempotent-Replay', '1');
+                    self::audit($tool, 'replay', 0);
+                    return $response;
+                }
+
+                $lock_key = 'webmcp_idem_lock_' . md5($cache_key);
+                $lock_acquired = self::claim_idempotency($lock_key, $fingerprint, max(60, (int) Plugin::opt('idempotency_ttl', 300)));
+                if (!$lock_acquired) {
+                    return new WP_Error('webmcp_idempotency_in_progress', 'An identical request is already being processed.', ['status' => 409]);
+                }
             }
         }
 
@@ -145,15 +196,19 @@ final class REST {
             $response = call_user_func($callback);
         } catch (\Throwable $error) {
             self::audit($tool, 'exception', (microtime(true) - $started) * 1000);
+            if ($lock_acquired) self::release_idempotency($lock_key, $fingerprint);
             return new WP_Error('webmcp_tool_exception', 'The tool could not complete safely.', ['status' => 500]);
         }
 
         if ($cache_key !== '' && $response instanceof WP_REST_Response) {
             set_transient($cache_key, [
-                'data'   => $response->get_data(),
-                'status' => $response->get_status(),
+                'data'        => $response->get_data(),
+                'status'      => $response->get_status(),
+                'fingerprint' => $fingerprint,
             ], max(60, (int) Plugin::opt('idempotency_ttl', 300)));
         }
+
+        if ($lock_acquired) self::release_idempotency($lock_key, $fingerprint);
 
         $status = $response instanceof WP_REST_Response ? $response->get_status() : 200;
         self::audit($tool, $status >= 400 ? 'failure' : 'success', (microtime(true) - $started) * 1000);
@@ -198,12 +253,6 @@ final class REST {
             return $size_check;
         }
 
-        // Rate limiting (applies to all endpoints if enabled)
-        $rl = self::rate_limit_check();
-        if ($rl instanceof WP_Error) {
-            return $rl;
-        }
-
         // Capability gate
         $cap = Tools::required_capability($tool);
         if ($cap !== '') {
@@ -223,14 +272,15 @@ final class REST {
             }
         }
 
-        return true;
+        // Charge only requests that have passed authentication/nonce policy.
+        return self::rate_limit_check($tool);
     }
 
     /**
-     * Basic per-IP rate limit using transients.
+     * Per-principal/tool rate limit with an optional scoped global ceiling.
      * Returns true or WP_Error(429).
      */
-    private static function rate_limit_check() {
+    private static function rate_limit_check(string $tool = '') {
         if (!Plugin::opt('rate_limit_enabled', 1)) {
             return true;
         }
@@ -238,14 +288,11 @@ final class REST {
         $window = max(10, (int) Plugin::opt('rate_limit_window', 60));  // seconds
         $maxReq = max(1, (int) Plugin::opt('rate_limit_max', 60));      // requests/window
 
-        $ip = self::client_ip();
+        $principal = self::rate_limit_principal();
         $bucket = (int) floor(time() / $window);
 
-        $key = 'webmcp_rl_' . md5($ip . '|' . $bucket);
-        $count = (int) get_transient($key);
-
-        $count++;
-        set_transient($key, $count, $window + 5);
+        $key = 'webmcp_rl_' . md5($principal . '|' . sanitize_key($tool) . '|' . $bucket);
+        $count = self::increment_counter($key, $window + 5);
 
         if ($count > $maxReq) {
             return new WP_Error(
@@ -257,13 +304,14 @@ final class REST {
 
         if (Plugin::opt('rate_limit_global_enabled', 1)) {
             $global_max = max(1, (int) Plugin::opt('rate_limit_global_max', 120));
-            $global_key = 'webmcp_rl_global_' . $bucket;
-            $global_count = (int) get_transient($global_key) + 1;
-            set_transient($global_key, $global_count, $window + 5);
+            // Keep anonymous traffic from consuming the authenticated pool.
+            $scope = is_user_logged_in() ? 'authenticated' : 'anonymous';
+            $global_key = 'webmcp_rl_global_' . $scope . '_' . $bucket;
+            $global_count = self::increment_counter($global_key, $window + 5);
             if ($global_count > $global_max) {
                 return new WP_Error(
                     'webmcp_global_rate_limited',
-                    'The site-wide WebMCP limit has been reached. Try again later.',
+                    'The WebMCP limit for this caller class has been reached. Try again later.',
                     ['status' => 429, 'retry_after' => $window]
                 );
             }
@@ -284,6 +332,104 @@ final class REST {
             );
         }
         return true;
+    }
+
+    /**
+     * Apply the configured request-size limit to native Ability input.
+     *
+     * @param array<string,mixed> $input
+     */
+    private static function request_size_check_input(array $input) {
+        $limit = max(1024, (int) Plugin::opt('request_size_limit', 102400));
+        $encoded = wp_json_encode($input);
+        if ($encoded === false || strlen((string) $encoded) > $limit) {
+            return new WP_Error(
+                'webmcp_request_too_large',
+                'Tool input exceeds the configured size limit.',
+                ['status' => 413]
+            );
+        }
+        return true;
+    }
+
+    private static function rate_limit_principal(): string {
+        return is_user_logged_in() ? 'user:' . get_current_user_id() : 'ip:' . self::client_ip();
+    }
+
+    private static function increment_counter(string $key, int $expiration): int {
+        $group = 'wp-webmcp';
+
+        // External object caches generally provide atomic increment semantics.
+        if (function_exists('wp_using_ext_object_cache') && wp_using_ext_object_cache()) {
+            if (wp_cache_add($key, 1, $group, $expiration)) return 1;
+            if (function_exists('wp_cache_incr')) {
+                $count = wp_cache_incr($key, 1, $group);
+                if ($count !== false) return (int) $count;
+            }
+        }
+
+        // The default WordPress object cache is request-local, so serialize
+        // transient fallback updates with an atomic option-row lock. A short
+        // expiry lets another request recover if the worker terminates.
+        $lock_key = 'webmcp_rl_lock_' . md5($key);
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            if (add_option($lock_key, ['expires' => time() + 5], '', 'no')) {
+                try {
+                    $count = (int) get_transient($key) + 1;
+                    set_transient($key, $count, $expiration);
+                    return $count;
+                } finally {
+                    delete_option($lock_key);
+                }
+            }
+
+            $lock = get_option($lock_key, []);
+            if (is_array($lock) && !empty($lock['expires']) && (int) $lock['expires'] < time()) {
+                delete_option($lock_key);
+            }
+            usleep(1000);
+        }
+
+        // Preserve availability if an object-cache/DB lock backend is
+        // misbehaving; the normal path above remains serialized.
+        $count = (int) get_transient($key) + 1;
+        set_transient($key, $count, $expiration);
+        return $count;
+    }
+
+    private static function idempotency_identity(WP_REST_Request $req): string {
+        if (is_user_logged_in()) return 'user:' . get_current_user_id();
+
+        $cookie = (string) $req->get_header('Cookie');
+        if ($cookie === '') return '';
+
+        return 'cookie:' . hash_hmac('sha256', $cookie, wp_salt('auth'));
+    }
+
+    private static function request_fingerprint(WP_REST_Request $req, string $tool): string {
+        $params = $req->get_params();
+        if (is_array($params)) ksort($params);
+        return hash('sha256', $tool . '|' . (string) wp_json_encode($params));
+    }
+
+    private static function claim_idempotency(string $lock_key, string $fingerprint, int $ttl): bool {
+        $lock = ['fingerprint' => $fingerprint, 'expires' => time() + $ttl];
+        if (add_option($lock_key, $lock, '', 'no')) return true;
+
+        $existing = get_option($lock_key, []);
+        if (is_array($existing) && !empty($existing['expires']) && (int) $existing['expires'] < time()) {
+            delete_option($lock_key);
+            return add_option($lock_key, $lock, '', 'no');
+        }
+
+        return false;
+    }
+
+    private static function release_idempotency(string $lock_key, string $fingerprint): void {
+        $existing = get_option($lock_key, []);
+        if (is_array($existing) && isset($existing['fingerprint']) && hash_equals((string) $existing['fingerprint'], $fingerprint)) {
+            delete_option($lock_key);
+        }
     }
 
     private static function idempotency_key(WP_REST_Request $req): string {
@@ -315,7 +461,7 @@ final class REST {
         $post_id = absint($req->get_param('id'));
         $post = get_post($post_id);
 
-        if (!$post || $post->post_status !== 'publish') {
+        if (!$post || $post->post_status !== 'publish' || !is_post_publicly_viewable($post) || post_password_required($post)) {
             return new WP_REST_Response(['error' => 'Not found'], 404);
         }
 

@@ -198,6 +198,10 @@ final class Tools {
                         if (!Tools::validate_input($key, $input, $error)) {
                             return new \WP_Error('webmcp_invalid_input', $error ?: 'Invalid tool input.', ['status' => 400]);
                         }
+                        $authorization = REST::authorize_native_tool($key, $input);
+                        if ($authorization instanceof \WP_Error) {
+                            return $authorization;
+                        }
                         return call_user_func($execute, $input);
                     },
                     'permission_callback' => static function ($input = null) use ($key) {

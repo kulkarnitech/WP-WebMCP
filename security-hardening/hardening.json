@@ -1,0 +1,149 @@
+{
+  "documentType": "codex-security.hardening-analysis",
+  "schemaVersion": "1.0",
+  "analysisId": "hardening_execution-and-domain-policy",
+  "sourceScan": {
+    "scanId": "be39a2e7-9b79-47be-977d-35f1d117cad0",
+    "targetRevision": "371ebac5b9b59247df76ef56e7799f4b1f9f9b99",
+    "sourceDrift": "none"
+  },
+  "assessment": {
+    "outcome": "opportunities_identified",
+    "summary": "The findings support two cross-cutting hardening opportunities: one execution policy for every transport, and domain-owned authorization before content and community sinks."
+  },
+  "constraints": {
+    "profile": "balanced",
+    "changeHorizons": ["incremental", "medium_term"],
+    "nonNegotiables": ["Preserve public REST tool names and response shapes.", "Keep native mutation Abilities opt-in."],
+    "assumptions": ["No measured latency or memory budget was supplied.", "The plugin should remain deployable without a new service.", "Anonymous WooCommerce cart operations may be intentional and require a product decision."]
+  },
+  "opportunities": [
+    {
+      "opportunityId": "execution-policy-gateway",
+      "title": "One policy boundary for REST and native execution",
+      "summary": "Make request, identity, authorization, quota, idempotency, audit, and dispatch controls common to every tool entry point.",
+      "diagnosis": "REST routes and native Abilities duplicate execution paths, while idempotency is claimed after the side effect and the global limiter is shared before authorization.",
+      "evidence": [
+        {"claimType": "observed", "sourceKind": "finding", "findingId": "csf_efc629ac65c7d03cc8d6a47f", "path": "includes/class-tools.php", "claim": "Native Abilities call tool callbacks without the REST request-size and rate-limit path."},
+        {"claimType": "observed", "sourceKind": "finding", "findingId": "csf_973adf337076f4752f904952", "path": "includes/class-rest.php", "claim": "A shared global bucket is charged before capability and nonce checks."},
+        {"claimType": "observed", "sourceKind": "finding", "findingId": "csf_8a400003aa21945f7d5ff023", "path": "includes/class-rest.php", "claim": "Idempotency uses a get-then-execute-then-set sequence."},
+        {"claimType": "inferred", "sourceKind": "source", "path": "includes/class-rest.php", "claim": "Security policy ownership is split across adapters rather than enforced by one execution boundary."}
+      ],
+      "desiredInvariants": ["REST and native invocations use the same policy sequence.", "Budgets are isolated by principal and tool.", "Idempotency is atomically claimed before a mutation.", "Native mutation Abilities require an explicit equivalent policy."],
+      "proposalPath": "proposals/execution-policy-gateway.md",
+      "options": [
+        {
+          "optionId": "shared-local-guards",
+          "title": "Local guards and shared atomic utility",
+          "kind": "incremental",
+          "summary": "Patch each current entry point and centralize only atomic counters and idempotency records.",
+          "diagramPaths": {"before": "diagrams/execution-policy-gateway-before.mmd", "after": "diagrams/execution-policy-gateway-shared-local-guards-after.mmd"},
+          "findingCoverage": [
+            {"findingId": "csf_efc629ac65c7d03cc8d6a47f", "effect": "addresses", "tacticalFixRequired": true, "rationale": "The native wrapper must invoke the shared controls."},
+            {"findingId": "csf_973adf337076f4752f904952", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Principal-aware buckets replace the pre-auth shared budget."},
+            {"findingId": "csf_8a400003aa21945f7d5ff023", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Atomic claim happens before dispatch."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "The three observed paths are closed, but future entry points can still omit the utility.", "validationPlan": "Exercise REST, native, and every registered mutation path."},
+            {"dimension": "performance", "direction": "neutral", "confidence": "medium", "basis": "source-derived", "assessment": "Adds bounded cache operations without a process hop.", "validationPlan": "Benchmark p50/p95 latency and cache operations."},
+            {"dimension": "memory", "direction": "neutral", "confidence": "medium", "basis": "source-derived", "assessment": "Uses bounded transient records per request/key.", "validationPlan": "Measure peak PHP memory and transient cardinality."},
+            {"dimension": "reliability", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Atomic claims prevent duplicate mutation retries.", "validationPlan": "Run concurrent request tests and cache-backend matrix."},
+            {"dimension": "operability", "direction": "improves", "confidence": "medium", "basis": "hypothetical", "assessment": "Principal/tool counters make abuse diagnosis clearer.", "validationPlan": "Verify audit and 429 metrics in staging."},
+            {"dimension": "migration", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "Keeps current registry and public routes.", "validationPlan": "Run response and capability compatibility tests."}
+          ],
+          "residualRisks": ["A later entry point can bypass the utility.", "Atomic cache support varies by deployment."],
+          "implementationReadiness": {"affectedComponents": ["includes/class-rest.php", "includes/class-tools.php"], "workPackages": ["Add atomic idempotency and principal-aware quota helpers.", "Wrap native execution with the helpers."], "acceptanceCriteria": ["Concurrent duplicate mutations execute once.", "Anonymous traffic cannot exhaust authenticated capacity."], "migrationNotes": ["Retain existing route names and response shapes."], "rollback": "Disable the new wrappers only after retaining the tactical checks."}
+        },
+        {
+          "optionId": "unified-execution-policy",
+          "title": "Unified ExecutionPolicy boundary",
+          "kind": "structural",
+          "summary": "Route REST and native adapters through one normalized policy and dispatch service.",
+          "diagramPaths": {"before": "diagrams/execution-policy-gateway-before.mmd", "after": "diagrams/execution-policy-gateway-unified-execution-policy-after.mmd"},
+          "findingCoverage": [
+            {"findingId": "csf_efc629ac65c7d03cc8d6a47f", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Both adapters become policy clients."},
+            {"findingId": "csf_973adf337076f4752f904952", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Quota selection and authorization order are centralized."},
+            {"findingId": "csf_8a400003aa21945f7d5ff023", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Idempotency is a policy stage before dispatch."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "New transports inherit the policy by construction, reducing control drift.", "validationPlan": "Assert all registered transports call the policy in contract tests."},
+            {"dimension": "performance", "direction": "neutral", "confidence": "medium", "basis": "hypothetical", "assessment": "Adds normalization and policy dispatch but no network hop.", "validationPlan": "Compare p50/p95 latency and callback throughput."},
+            {"dimension": "memory", "direction": "neutral", "confidence": "medium", "basis": "hypothetical", "assessment": "Adds a bounded invocation context.", "validationPlan": "Measure peak PHP memory under concurrent requests."},
+            {"dimension": "reliability", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "One failure policy simplifies denial and replay behavior, while migration adds adapter risk.", "validationPlan": "Run status/error compatibility and rollback drills."},
+            {"dimension": "operability", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "Central audit and policy reasons improve diagnosis.", "validationPlan": "Verify metrics by tool, principal class, and decision."},
+            {"dimension": "migration", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "Requires a two-phase adapter refactor and compatibility fixtures.", "validationPlan": "Ship behind a feature flag and compare legacy/policy decisions."}
+          ],
+          "residualRisks": ["Host-provided endpoints outside the plugin can still bypass plugin policy.", "Native mutation confirmation remains deployment-specific."],
+          "implementationReadiness": {"affectedComponents": ["includes/class-rest.php", "includes/class-tools.php", "includes/class-plugin.php"], "workPackages": ["Define normalized invocation and policy result contracts.", "Move REST adapters behind the policy.", "Move native abilities behind the policy.", "Add parity and concurrency tests."], "acceptanceCriteria": ["All tool transports share policy decisions.", "No mutation executes without an atomic idempotency decision when a key is supplied."], "migrationNotes": ["Keep legacy route names and preserve opt-in native mutation behavior."], "rollback": "Disable policy adapter registration while retaining Option 1 guards."}
+        }
+      ],
+      "recommendedOptionId": "unified-execution-policy",
+      "recommendation": "Use the unified boundary as the target design and ship local atomic guards first as the release gate."
+    },
+    {
+      "opportunityId": "domain-aware-authorization",
+      "title": "Domain-owned authorization before content and community sinks",
+      "summary": "Make WordPress visibility and BuddyPress/BuddyBoss posting policy explicit instead of relying on a generic capability.",
+      "diagnosis": "The content adapter treats published status as public and the community adapter treats the generic WebMCP gate as sufficient for a domain mutation.",
+      "evidence": [
+        {"claimType": "observed", "sourceKind": "finding", "findingId": "csf_91129cebbfbb83383193d9e0", "path": "includes/class-rest.php", "claim": "Published post content is returned without public-visibility or password checks."},
+        {"claimType": "observed", "sourceKind": "finding", "findingId": "csf_014652bc75c27a165ce450a8", "path": "includes/class-community.php", "claim": "Activity creation calls bp_activity_add() after only generic capability/nonce checks."},
+        {"claimType": "inferred", "sourceKind": "source", "path": "includes/class-community.php", "claim": "The adapter lacks a domain policy owner that can evolve with host-plugin versions."}
+      ],
+      "desiredInvariants": ["Content is publicly viewable, password-allowed, and membership-allowed before serialization.", "Community publication passes deployed BuddyPress/BuddyBoss policy checks.", "Mutations use a dedicated configurable capability.", "Policy decisions are independently testable."],
+      "proposalPath": "proposals/domain-aware-authorization.md",
+      "options": [
+        {
+          "optionId": "adapter-local-domain-guards",
+          "title": "Adapter-local domain guards",
+          "kind": "incremental",
+          "summary": "Add core visibility/password checks and explicit community permission checks in current callbacks.",
+          "diagramPaths": {"before": "diagrams/domain-aware-authorization-before.mmd", "after": "diagrams/domain-aware-authorization-adapter-local-guards-after.mmd"},
+          "findingCoverage": [
+            {"findingId": "csf_91129cebbfbb83383193d9e0", "effect": "addresses", "tacticalFixRequired": true, "rationale": "The content callback gets direct WordPress visibility checks."},
+            {"findingId": "csf_014652bc75c27a165ce450a8", "effect": "addresses", "tacticalFixRequired": true, "rationale": "The community callback enforces a dedicated capability and host policy."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "Closes the reviewed content and activity paths immediately.", "validationPlan": "Run protected-post and community-policy fixtures."},
+            {"dimension": "performance", "direction": "neutral", "confidence": "medium", "basis": "source-derived", "assessment": "Core checks are local; host policy calls may add lookups.", "validationPlan": "Benchmark content and activity requests with plugins active."},
+            {"dimension": "memory", "direction": "neutral", "confidence": "medium", "basis": "source-derived", "assessment": "No new retained state is required.", "validationPlan": "Measure peak memory for collection and activity requests."},
+            {"dimension": "reliability", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Failing a policy check prevents the sink, but host-version differences can cause false denies.", "validationPlan": "Test absent and present integration APIs."},
+            {"dimension": "operability", "direction": "neutral", "confidence": "low", "basis": "hypothetical", "assessment": "Existing logs remain, but deny reasons should be made observable.", "validationPlan": "Review production support requirements for policy denials."},
+            {"dimension": "migration", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "Small callback changes and capability mapping are reversible.", "validationPlan": "Check existing role behavior and response compatibility."}
+          ],
+          "residualRisks": ["Future adapters can duplicate or omit guards.", "bp_activity_add behavior remains version-dependent."],
+          "implementationReadiness": {"affectedComponents": ["includes/class-rest.php", "includes/class-community.php", "includes/class-admin.php"], "workPackages": ["Add WordPress visibility/password/type checks.", "Add dedicated community capability and host policy checks."], "acceptanceCriteria": ["Protected content is never serialized.", "Blocked/suspended community users cannot publish through WebMCP."], "migrationNotes": ["Document capability assignment for existing installations."], "rollback": "Revert the local checks only after disabling affected tools."}
+        },
+        {
+          "optionId": "domain-policy-services",
+          "title": "Domain policy services",
+          "kind": "structural",
+          "summary": "Expose content and community policy services that compose WordPress, PMPro, and BuddyPress/BuddyBoss decisions.",
+          "diagramPaths": {"before": "diagrams/domain-aware-authorization-before.mmd", "after": "diagrams/domain-aware-authorization-domain-policy-services-after.mmd"},
+          "findingCoverage": [
+            {"findingId": "csf_91129cebbfbb83383193d9e0", "effect": "addresses", "tacticalFixRequired": true, "rationale": "The content policy owns the core and PMPro checks."},
+            {"findingId": "csf_014652bc75c27a165ce450a8", "effect": "addresses", "tacticalFixRequired": true, "rationale": "The community policy owns controller/hooks and capability decisions."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "Domain policy becomes reusable across REST, native, and future transports.", "validationPlan": "Require policy-service contract tests for every integration version."},
+            {"dimension": "performance", "direction": "neutral", "confidence": "low", "basis": "hypothetical", "assessment": "Service dispatch is small, but host policy checks may add queries.", "validationPlan": "Benchmark with query logging and representative membership/community data."},
+            {"dimension": "memory", "direction": "neutral", "confidence": "low", "basis": "hypothetical", "assessment": "Adds bounded policy context objects.", "validationPlan": "Measure peak memory under collection and mutation load."},
+            {"dimension": "reliability", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Fail-closed policy results are consistent, but version adapters require fixture coverage.", "validationPlan": "Test missing APIs, denied decisions, and controller failures."},
+            {"dimension": "operability", "direction": "improves", "confidence": "medium", "basis": "hypothetical", "assessment": "Stable decision reasons support supportability and audit.", "validationPlan": "Verify metrics and admin diagnostics across integrations."},
+            {"dimension": "migration", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "Requires integration matrix, service interfaces, and staged adapter migration.", "validationPlan": "Run side-by-side decisions before flipping the service path."}
+          ],
+          "residualRisks": ["A policy service can still be incorrectly implemented for a host-plugin version.", "Custom hooks may intentionally alter access after the service decision."],
+          "implementationReadiness": {"affectedComponents": ["includes/class-rest.php", "includes/class-community.php", "includes/class-pmpro.php", "includes/class-tools.php"], "workPackages": ["Define policy result contracts.", "Implement content and community policy adapters.", "Migrate existing callbacks and add version fixtures."], "acceptanceCriteria": ["All transports obtain domain decisions from policy services.", "Unavailable integration APIs fail closed for protected operations."], "migrationNotes": ["Start with staging shadow decisions and retain local guards."], "rollback": "Disable service adapters while retaining Option 1 guards."}
+        }
+      ],
+      "recommendedOptionId": "domain-policy-services",
+      "recommendation": "Ship local domain guards immediately, then adopt policy services once supported BuddyPress/BuddyBoss versions are covered by integration fixtures."
+    }
+  ],
+  "openQuestions": [
+    "Which WordPress 6.9+ native Abilities and REST exposure modes are enabled in production?",
+    "Which BuddyPress/BuddyBoss versions and posting-policy hooks are supported?",
+    "Is the deployment object cache atomic for add/increment operations?",
+    "Are anonymous WooCommerce cart mutations intentionally public?"
+  ]
+}

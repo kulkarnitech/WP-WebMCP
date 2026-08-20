@@ -1,0 +1,8 @@
+flowchart LR
+  U[Caller] --> P[wp_get_post route]
+  U --> B[community activity route]
+  P --> W[WP visibility + password + PMPro]
+  W --> C[post_content response]
+  B --> G[Dedicated capability + nonce]
+  G --> D[BP/BuddyBoss posting policy hooks]
+  D --> A[bp_activity_add]

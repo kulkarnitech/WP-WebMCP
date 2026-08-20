@@ -125,7 +125,7 @@ final class Community {
             'annotations' => ['readOnlyHint' => false, 'untrustedContentHint' => false],
             'confirmation' => true, 'idempotent' => true,
             'option' => 'tool_bp_activity_create', 'default_enabled' => false,
-            'capability_option' => 'cap_bp_activity_create', 'capability' => 'read',
+            'capability_option' => 'cap_bp_activity_create', 'capability' => 'publish_posts',
             'method' => 'POST', 'path' => '/community/activity',
             'ability_name' => 'webmcp/bp-activity-create',
             'execute_callback' => static function (array $input) {
@@ -277,11 +277,25 @@ final class Community {
 
     public static function activity_create(WP_REST_Request $request) {
         return REST::with_idempotency($request, 'bp_activity_create', static function () use ($request) {
-            if (!function_exists('bp_activity_add') || !is_user_logged_in()) return new WP_REST_Response(['error' => 'Activity publishing is unavailable'], 400);
+            if (!function_exists('rest_do_request') || !is_user_logged_in()) return new WP_REST_Response(['error' => 'Activity publishing is unavailable'], 400);
             $content = mb_substr(sanitize_textarea_field((string) $request->get_param('content')), 0, 500);
             if ($content === '') return new WP_REST_Response(['error' => 'Content is required'], 400);
-            $activity_id = bp_activity_add(['user_id' => get_current_user_id(), 'content' => $content, 'component' => 'members', 'type' => 'activity_update', 'action' => '']);
-            if (!$activity_id) return new WP_REST_Response(['error' => 'Activity could not be published'], 400);
+
+            // Delegate to BuddyPress/BuddyBoss's permission-aware REST
+            // controller instead of inserting directly with bp_activity_add().
+            $bp_request = new WP_REST_Request('POST', '/buddypress/v1/activity');
+            $bp_request->set_param('content', $content);
+            $bp_request->set_param('user_id', get_current_user_id());
+            $response = rest_do_request($bp_request);
+            if ($response instanceof WP_Error) return new WP_REST_Response(['error' => 'Activity could not be published'], 403);
+            if (!($response instanceof WP_REST_Response) || $response->get_status() >= 400) {
+                $status = $response instanceof WP_REST_Response ? max(400, min(599, (int) $response->get_status())) : 502;
+                return new WP_REST_Response(['error' => 'Activity could not be published'], $status);
+            }
+
+            $data = $response->get_data();
+            $activity_id = is_array($data) ? absint($data['id'] ?? ($data[0]['id'] ?? 0)) : 0;
+            if (!$activity_id) return new WP_REST_Response(['error' => 'Activity could not be published'], 502);
             return new WP_REST_Response(['ok' => true, 'activity_id' => absint($activity_id), 'content' => $content], 201);
         });
     }

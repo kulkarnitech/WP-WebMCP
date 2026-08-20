@@ -1,0 +1,9 @@
+flowchart LR
+  A[Remote caller] --> R[REST routes]
+  A --> N[Native Abilities REST surface]
+  R --> RP[REST policy guards]
+  N --> NP[Native policy guards]
+  RP --> P[Shared counters + atomic idempotency utility]
+  NP --> P
+  P --> C[Tool callback]
+  C --> S[Woo/BuddyPress/WordPress sink]

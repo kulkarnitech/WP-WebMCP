@@ -1,0 +1,10 @@
+flowchart LR
+  A[Remote caller] --> R[REST routes]
+  A --> N[Native Abilities REST surface]
+  R --> RP[REST request-size + rate + capability + nonce]
+  N --> NP[Tools::can_execute + input schema]
+  RP --> C[Tool callback]
+  NP --> C
+  C --> S[Woo/BuddyPress/WordPress sink]
+  C --> I[get_transient -> callback -> set_transient]
+  RP --> G[Shared global transient bucket]

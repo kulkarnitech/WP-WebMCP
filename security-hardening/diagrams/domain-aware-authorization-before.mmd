@@ -1,0 +1,7 @@
+flowchart LR
+  U[Caller] --> P[wp_get_post route]
+  U --> B[community activity route]
+  P --> V[post_status + optional PMPro]
+  V --> C[post_content response]
+  B --> G[generic capability + nonce]
+  G --> A[bp_activity_add]

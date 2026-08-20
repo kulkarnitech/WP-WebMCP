@@ -1,0 +1,11 @@
+flowchart LR
+  A[Remote caller] --> R[REST adapter]
+  A --> N[Native Ability adapter]
+  R --> E[ExecutionPolicy]
+  N --> E
+  E --> Z[Size + identity + authorization]
+  Z --> Q[Principal/tool quotas]
+  Q --> I[Atomic idempotency claim]
+  I --> C[Tool callback]
+  C --> S[Woo/BuddyPress/WordPress sink]
+  E --> O[Audit + metrics]

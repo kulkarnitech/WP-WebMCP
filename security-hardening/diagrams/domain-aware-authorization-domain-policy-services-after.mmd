@@ -1,0 +1,9 @@
+flowchart LR
+  U[Caller] --> P[Content adapter]
+  U --> B[Community adapter]
+  P --> CP[ContentAccessPolicy]
+  B --> MP[CommunityMutationPolicy]
+  CP --> W[WP visibility + PMPro]
+  MP --> D[BP/BuddyBoss controller or policy hooks]
+  W --> C[post_content response]
+  D --> A[bp_activity_add or official service]
