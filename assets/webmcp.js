@@ -26,6 +26,16 @@
     if (
       window.navigator &&
       window.navigator.modelContext &&
+      typeof window.navigator.modelContext.registerTool === "function"
+    ) {
+      // Some early previews and WordPress bridges exposed the draft method
+      // through navigator.modelContext before the API moved to document.
+      return { kind: "draft", context: window.navigator.modelContext };
+    }
+
+    if (
+      window.navigator &&
+      window.navigator.modelContext &&
       typeof window.navigator.modelContext.provideContext === "function"
     ) {
       return { kind: "legacy", context: window.navigator.modelContext };
@@ -53,11 +63,24 @@
     }
   }
 
-  function result(value) {
+  function serialize(value) {
     var text = typeof value === "string" ? value : safeJson(value);
     if (typeof text !== "string") text = String(text);
-    if (text.length <= MAX_RESULT_CHARS) return text;
-    return text.slice(0, MAX_RESULT_CHARS - 3) + "...";
+    return text;
+  }
+
+  function result(value) {
+    var text = serialize(value);
+    if (text.length <= MAX_RESULT_CHARS) return value;
+
+    // Preserve a serializable, structured result for the current draft API;
+    // oversized output is explicitly marked instead of silently becoming a
+    // truncated string that no longer matches the tool's output schema.
+    return {
+      error: "Tool result exceeded the response size limit.",
+      truncated: true,
+      preview: text.slice(0, MAX_RESULT_CHARS - 3) + "...",
+    };
   }
 
   function ensureActive(options) {
@@ -133,7 +156,7 @@
     wp_search: async function (input, options) {
       ensureActive(options);
       var data = await apiGet("/search", { q: input.q, type: input.type }, options);
-      return result(data.results || data);
+      return result(data);
     },
 
     wp_get_post: async function (input, options) {
@@ -224,7 +247,7 @@
         return Object.assign({}, tool, {
           execute: async function (input, options) {
             var value = await tool.execute(input, options);
-            return { content: [{ type: "text", text: result(value) }] };
+            return { content: [{ type: "text", text: serialize(value) }] };
           },
         });
       });

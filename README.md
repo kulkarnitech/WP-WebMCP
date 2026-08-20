@@ -48,6 +48,17 @@ intentionally deferred to the final optional phase because it requires an
 external/local WebSocket bridge. It is not part of the current WebMCP browser
 draft.
 
+## Reference alignment
+
+Phase 1 follows the current `document.modelContext.registerTool()` contract
+used by the [WebMCP draft](https://webmachinelearning.github.io/webmcp/) and
+the [WebMCP-org/MCP-B packages](https://github.com/WebMCP-org/npm-packages).
+The [WordPress.org WebMCP Bridge](https://wordpress.org/plugins/webmcp-bridge/)
+is a useful feature reference, but its broader manifest/discovery surface and
+WooCommerce catalog, coupon, and checkout tools are still planned here. See
+[`WEBMCP-WORDPRESS-PLAN.md`](WEBMCP-WORDPRESS-PLAN.md) for the alignment audit
+and prioritized Phase 2 gaps.
+
 ------------------------------------------------------------------------
 
 ## Architecture
