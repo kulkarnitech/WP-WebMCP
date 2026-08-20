@@ -22,9 +22,8 @@ when no browser exposes `document.modelContext`.
 
 ## Reference alignment audit (2026-08-20)
 
-**Conclusion: Phase 1 is aligned with the current WebMCP browser direction,
-but it is not yet feature-complete compared with the WordPress.org WebMCP
-Bridge plugin.**
+**Conclusion: the native browser path and planned ecosystem surfaces are
+implemented in 0.3.0; only the optional blue connector remains deferred.**
 
 ### What is aligned
 
@@ -51,22 +50,19 @@ Bridge plugin.**
   `document.modelContext.registerTool()`. We follow the latter and retain a
   legacy `navigator` fallback for preview compatibility.
 
-### Prioritized gaps to close
+### Implemented follow-through
 
-1. **Discovery contract (Phase 2A):** add a filtered `/manifest` endpoint and a
-   small `/discovery` response, then evaluate RFC 8288 Link headers/HTML tags,
-   API Catalog, MCP Server Card, Agent Skills, and service-doc/service-desc
-   metadata. These should advertise only enabled, visitor-authorized tools.
-2. **Core and WooCommerce coverage (Phase 2B):** add menu, taxonomy, and site
-   metadata tools; then Woo product search/detail, cart removal, coupons,
-   checkout-field schema, and product categories using supported Woo APIs.
-3. **Auth and abuse hardening (Phase 2C):** add a fresh-nonce endpoint for
-   long-lived browser sessions, an optional global execution ceiling alongside
-   the current per-IP limiter, input-size/schema depth limits, and explicit
-   output sanitization/redaction tests.
-4. **Operations (Phase 4):** add WordPress Playground/plugin-fixture tests,
-   live admin API examples, and cache-aware discovery tests before claiming
-   WordPress.org production readiness.
+- **Discovery contract:** `/manifest`, `/discovery`, `/nonce`, well-known
+  metadata, RFC 8288-style Link headers, and HTML link tags are implemented.
+- **Core and WooCommerce coverage:** menu/taxonomy/site info, product
+  search/detail/categories, checkout fields, cart removal, and coupons use
+  bounded public WordPress/Woo APIs.
+- **Auth and abuse hardening:** global and per-IP limits, request-size/schema
+  depth limits, idempotency replay defense, sanitized output, and audit hooks
+  are implemented.
+- **Operations:** admin read-only examples, deployment guidance, adapter docs,
+  and a PHPUnit/WordPress test harness are included. A full plugin-fixture or
+  Playground run still depends on an external WordPress test environment.
 
 The comparison reference for WordPress Abilities bridging is
 [Code Atlantic's WebMCP Abilities](https://github.com/code-atlantic/webmcp-abilities).
@@ -103,7 +99,7 @@ service layer, not direct SQL, and should return bounded, schema-valid output.
 - Add the first BuddyPress/BuddyBoss member-search adapter through the
   permission-aware BuddyPress REST controller.
 
-### Phase 2 — read-only adapters
+### Phase 2 — read-only adapters (implemented)
 
 - Add Woo product tools using WooCommerce CRUD/Store API semantics and HPOS-safe
   access patterns.
@@ -113,7 +109,7 @@ service layer, not direct SQL, and should return bounded, schema-valid output.
   private-network checks and pagination limits.
 - Add adapter-level toggles and capability choices in the admin UI.
 
-### Phase 3 — confirmed mutations
+### Phase 3 — confirmed mutations (implemented)
 
 - Add cart/checkout and community actions only as separate, single-purpose
   tools.
@@ -122,10 +118,11 @@ service layer, not direct SQL, and should return bounded, schema-valid output.
   capability/nonce checks.
 - Keep native mutation abilities disabled by default.
 
-### Phase 4 — ecosystem and operations
+### Phase 4 — ecosystem and operations (implemented/scaffolded)
 
 - Publish an adapter SDK/example package and versioned schemas.
-- Add integration tests against WordPress Playground and plugin fixtures.
+- Add integration tests against WordPress Playground and plugin fixtures when a
+  disposable WordPress test environment is available.
 - Add telemetry hooks that record tool name, result class, duration, and error
   code without recording content or credentials.
 - Document Permissions Policy (`tools`) and origin-isolation deployment

@@ -54,7 +54,20 @@ final class Admin {
                 'tool_wp_get_post'     => 1,
                 'tool_woo_cart_view'   => 1,
                 'tool_woo_cart_add'    => 1,
-                'tool_bp_members'     => 1,
+                'tool_bp_members'      => 1,
+                'tool_wp_get_menu'     => 1,
+                'tool_wp_get_categories' => 1,
+                'tool_wp_get_site_info' => 1,
+                'tool_woo_product_search' => 1,
+                'tool_woo_product_get' => 1,
+                'tool_woo_product_categories' => 1,
+                'tool_woo_checkout_fields' => 1,
+                'tool_woo_cart_remove' => 1,
+                'tool_woo_coupon_apply' => 1,
+                'tool_pmpro_memberships' => 1,
+                'tool_bp_groups' => 1,
+                'tool_bp_activity' => 1,
+                'tool_bp_activity_create' => 0,
 
                 // Role/cap gates for tool *exposure* (frontend) + intended REST enforcement
                 'cap_wp_search'        => '',
@@ -62,11 +75,20 @@ final class Admin {
                 'cap_woo_cart_view'    => 'read',
                 'cap_woo_cart_add'     => 'read',
                 'cap_bp_members'      => 'read',
+                'cap_pmpro_memberships' => 'read',
+                'cap_bp_groups' => 'read',
+                'cap_bp_activity' => 'read',
+                'cap_bp_activity_create' => 'read',
 
                 // Rate limiting (intended for REST; UI + option storage here)
                 'rate_limit_enabled'   => 1,
                 'rate_limit_window'    => 60,  // seconds
                 'rate_limit_max'       => 60,  // requests per window per IP
+                'rate_limit_global_enabled' => 1,
+                'rate_limit_global_max' => 120,
+                'request_size_limit' => 102400,
+                'schema_max_depth' => 8,
+                'idempotency_ttl' => 300,
             ],
         ]);
 
@@ -96,11 +118,14 @@ final class Admin {
             self::PAGE_SLUG
         );
 
-        self::add_checkbox('tool_wp_search', 'Tool: wp_search', 'Expose search tool.');
-        self::add_checkbox('tool_wp_get_post', 'Tool: wp_get_post', 'Expose post retrieval tool (PMPro paywall redaction applies if active).');
-        self::add_checkbox('tool_woo_cart_view', 'Tool: woo_cart_view', 'Expose Woo cart view tool (requires WooCommerce).');
-        self::add_checkbox('tool_woo_cart_add', 'Tool: woo_cart_add', 'Expose Woo add-to-cart tool (requires WooCommerce; should be user-confirmed).');
-        self::add_checkbox('tool_bp_members', 'Tool: bp_members', 'Expose BuddyPress/BuddyBoss member search (requires the community plugin).');
+        self::add_checkbox('tool_wp_search', 'Tool: wp_search', 'Expose search tool.', 'wp_webmcp_tools');
+        self::add_checkbox('tool_wp_get_post', 'Tool: wp_get_post', 'Expose post retrieval tool (PMPro paywall redaction applies if active).', 'wp_webmcp_tools');
+        self::add_checkbox('tool_woo_cart_view', 'Tool: woo_cart_view', 'Expose Woo cart view tool (requires WooCommerce).', 'wp_webmcp_tools');
+        self::add_checkbox('tool_woo_cart_add', 'Tool: woo_cart_add', 'Expose Woo add-to-cart tool (requires WooCommerce; should be user-confirmed).', 'wp_webmcp_tools');
+        self::add_checkbox('tool_bp_members', 'Tool: bp_members', 'Expose BuddyPress/BuddyBoss member search (requires the community plugin).', 'wp_webmcp_tools');
+        foreach (['wp_get_menu', 'wp_get_categories', 'wp_get_site_info', 'woo_product_search', 'woo_product_get', 'woo_product_categories', 'woo_checkout_fields', 'woo_cart_remove', 'woo_coupon_apply', 'pmpro_memberships', 'bp_groups', 'bp_activity', 'bp_activity_create'] as $tool) {
+            self::add_checkbox('tool_' . $tool, 'Tool: ' . $tool, 'Expose this tool when its integration is available.', 'wp_webmcp_tools');
+        }
 
         // =======================
         // Role / capability gates
@@ -120,6 +145,9 @@ final class Admin {
         self::add_capability_select('cap_woo_cart_view', 'Capability required: woo_cart_view', 'Who can see/use cart viewing tool.');
         self::add_capability_select('cap_woo_cart_add', 'Capability required: woo_cart_add', 'Who can see/use add-to-cart tool.');
         self::add_capability_select('cap_bp_members', 'Capability required: bp_members', 'Who can see/use community member search.');
+        foreach (['pmpro_memberships', 'bp_groups', 'bp_activity', 'bp_activity_create'] as $tool) {
+            self::add_capability_select('cap_' . $tool, 'Capability required: ' . $tool, 'Who can see/use this tool.');
+        }
 
         // =======================
         // Rate limiting settings
@@ -137,6 +165,11 @@ final class Admin {
         self::add_checkbox('rate_limit_enabled', 'Enable rate limiting', 'Apply rate limiting to WebMCP REST endpoints.');
         self::add_number('rate_limit_window', 'Window (seconds)', 'Time window for counting requests (e.g., 60).', 10, 86400);
         self::add_number('rate_limit_max', 'Max requests per window', 'Max requests per IP per window (e.g., 60).', 1, 100000);
+        self::add_checkbox('rate_limit_global_enabled', 'Enable global rate limiting', 'Apply a site-wide request ceiling in addition to the per-IP limit.', 'wp_webmcp_ratelimit');
+        self::add_number('rate_limit_global_max', 'Global max requests per window', 'Maximum WebMCP requests for the whole site in one window.', 1, 100000);
+        self::add_number('request_size_limit', 'Maximum request size (bytes)', 'Reject oversized WebMCP inputs before tool execution.', 1024, 1048576);
+        self::add_number('schema_max_depth', 'Maximum input nesting depth', 'Bounds nested native-ability input validation.', 2, 16);
+        self::add_number('idempotency_ttl', 'Idempotency cache (seconds)', 'How long mutation replay responses are retained.', 60, 86400);
     }
 
     private static function add_checkbox(string $key, string $label, string $help, string $section = ''): void {
@@ -211,10 +244,13 @@ final class Admin {
         $out['tool_woo_cart_view'] = !empty($input['tool_woo_cart_view']) ? 1 : 0;
         $out['tool_woo_cart_add']  = !empty($input['tool_woo_cart_add']) ? 1 : 0;
         $out['tool_bp_members']    = !empty($input['tool_bp_members']) ? 1 : 0;
+        foreach (['wp_get_menu', 'wp_get_categories', 'wp_get_site_info', 'woo_product_search', 'woo_product_get', 'woo_product_categories', 'woo_checkout_fields', 'woo_cart_remove', 'woo_coupon_apply', 'pmpro_memberships', 'bp_groups', 'bp_activity', 'bp_activity_create'] as $tool) {
+            $out['tool_' . $tool] = !empty($input['tool_' . $tool]) ? 1 : 0;
+        }
 
         // Capability gates (must be from whitelist)
         $choices = self::capability_choices();
-        $capKeys = ['cap_wp_search','cap_wp_get_post','cap_woo_cart_view','cap_woo_cart_add','cap_bp_members'];
+        $capKeys = ['cap_wp_search','cap_wp_get_post','cap_woo_cart_view','cap_woo_cart_add','cap_bp_members','cap_pmpro_memberships','cap_bp_groups','cap_bp_activity','cap_bp_activity_create'];
         foreach ($capKeys as $k) {
             $v = isset($input[$k]) ? sanitize_text_field((string)$input[$k]) : '';
             $out[$k] = array_key_exists($v, $choices) ? $v : '';
@@ -224,6 +260,11 @@ final class Admin {
         $out['rate_limit_enabled'] = !empty($input['rate_limit_enabled']) ? 1 : 0;
         $out['rate_limit_window']  = isset($input['rate_limit_window']) ? max(10, min(86400, (int)$input['rate_limit_window'])) : 60;
         $out['rate_limit_max']     = isset($input['rate_limit_max']) ? max(1, min(100000, (int)$input['rate_limit_max'])) : 60;
+        $out['rate_limit_global_enabled'] = !empty($input['rate_limit_global_enabled']) ? 1 : 0;
+        $out['rate_limit_global_max'] = isset($input['rate_limit_global_max']) ? max(1, min(100000, (int) $input['rate_limit_global_max'])) : 120;
+        $out['request_size_limit'] = isset($input['request_size_limit']) ? max(1024, min(1048576, (int) $input['request_size_limit'])) : 102400;
+        $out['schema_max_depth'] = isset($input['schema_max_depth']) ? max(2, min(16, (int) $input['schema_max_depth'])) : 8;
+        $out['idempotency_ttl'] = isset($input['idempotency_ttl']) ? max(60, min(86400, (int) $input['idempotency_ttl'])) : 300;
 
         return $out;
     }
@@ -238,6 +279,13 @@ final class Admin {
             WP_WEBMCP_LAYER_VERSION,
             true
         );
+        wp_localize_script('wp-webmcp-admin', 'WP_WEBMCP_ADMIN', [
+            'restBase' => esc_url_raw(rest_url('webmcp/v1')),
+            'nonce' => wp_create_nonce('wp_rest'),
+            'manifestUrl' => esc_url_raw(rest_url('webmcp/v1/manifest')),
+            'discoveryUrl' => esc_url_raw(rest_url('webmcp/v1/discovery')),
+            'definitions' => Tools::frontend_definitions(false),
+        ]);
     }
 
     /**
@@ -345,6 +393,16 @@ final class Admin {
             ];
         }
 
+        $known = array_map(static function ($row) { return $row['name']; }, $rows);
+        foreach ($toolStatus as $tool_name => $status) {
+            if (in_array($tool_name, $known, true)) continue;
+            $rows[] = [
+                'name' => $tool_name,
+                'status' => $status,
+                'note' => 'Registered through the WebMCP adapter registry; verify integration availability before use.',
+            ];
+        }
+
         foreach ($rows as $r) {
             $statusText = $r['status'] ? 'Enabled' : 'Disabled';
             echo '<tr>';
@@ -365,6 +423,25 @@ final class Admin {
             echo '<details style="background:#fff; border:1px solid #c3c4c7; border-radius:6px; padding:10px 12px; margin:10px 0;">';
             echo '<summary style="cursor:pointer;"><strong><code>' . esc_html($toolKey) . '</code></strong></summary>';
             echo '<pre style="white-space:pre-wrap; margin-top:10px;">' . esc_html(wp_json_encode($schema, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) . '</pre>';
+            echo '</details>';
+        }
+        echo '</div>';
+
+        echo '<h2>Discovery and API Examples</h2>';
+        echo '<p>Machine-readable discovery is available at <a href="' . esc_url(rest_url('webmcp/v1/manifest')) . '" target="_blank" rel="noopener">manifest</a> and <a href="' . esc_url(rest_url('webmcp/v1/discovery')) . '" target="_blank" rel="noopener">discovery</a>. The plugin does not include the deferred blue connector button.</p>';
+        echo '<div style="max-width:980px;">';
+        foreach (self::tool_schemas() as $toolKey => $schema) {
+            $method = strtoupper((string) ($schema['method'] ?? 'GET'));
+            $path = (string) ($schema['path'] ?? '');
+            if ($path === '') continue;
+            $endpoint = rest_url('webmcp/v1' . $path);
+            $curl = 'curl -X ' . $method . ' ' . escapeshellarg($endpoint) . ' -H ' . escapeshellarg('X-WP-Nonce: <nonce>');
+            if ($method !== 'GET') $curl .= ' -H ' . escapeshellarg('Content-Type: application/json') . ' -d ' . escapeshellarg('{}');
+            $js = "fetch(" . wp_json_encode($endpoint) . ", {method: " . wp_json_encode($method) . ", headers: {\"X-WP-Nonce\": nonce}}).then(r => r.json())";
+            echo '<details style="background:#fff; border:1px solid #c3c4c7; border-radius:6px; padding:10px 12px; margin:10px 0;">';
+            echo '<summary style="cursor:pointer;"><strong><code>' . esc_html($toolKey) . '</code></strong> <code>' . esc_html($method . ' ' . $path) . '</code></summary>';
+            echo '<pre style="white-space:pre-wrap;">' . esc_html($curl . "\n\n" . $js) . '</pre>';
+            if ($method === 'GET') echo '<button type="button" class="button button-secondary wp-webmcp-run-example" data-endpoint="' . esc_attr($endpoint) . '">Run read-only example</button><pre class="wp-webmcp-example-output" style="white-space:pre-wrap; max-height:220px; overflow:auto;"></pre>';
             echo '</details>';
         }
         echo '</div>';

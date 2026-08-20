@@ -119,14 +119,20 @@
       signal: options && options.signal,
     };
 
+    var payload = Object.assign({}, input || {});
+    if (payload.idempotency_key) {
+      request.headers["X-WebMCP-Idempotency-Key"] = String(payload.idempotency_key);
+      delete payload.idempotency_key;
+    }
+
     if (upperMethod === "GET" || upperMethod === "HEAD") {
-      Object.keys(input || {}).forEach(function (key) {
-        if (input[key] === undefined || input[key] === null || input[key] === "") return;
-        url.searchParams.set(key, String(input[key]));
+      Object.keys(payload).forEach(function (key) {
+        if (payload[key] === undefined || payload[key] === null || payload[key] === "") return;
+        url.searchParams.set(key, String(payload[key]));
       });
     } else {
       request.headers["Content-Type"] = "application/json";
-      request.body = JSON.stringify(input || {});
+      request.body = JSON.stringify(payload);
     }
 
     var response = await fetch(url.toString(), request);
@@ -150,6 +156,12 @@
     var productId = Number(input.product_id || 0);
     var qty = Number(input.qty || 1);
     return window.confirm("Add product " + productId + " (quantity " + qty + ") to the cart?");
+  }
+
+  async function confirmMutation(message, options) {
+    ensureActive(options);
+    if (typeof window.confirm !== "function") return false;
+    return window.confirm(message);
   }
 
   var handlers = {
@@ -176,8 +188,23 @@
 
       var productId = Number(input.product_id || 0);
       var qty = Math.max(1, Math.min(100, Number(input.qty || 1)));
-      var data = await apiPost("/cart/add", { product_id: productId, qty: qty }, options);
+      var data = await apiPost("/cart/add", { product_id: productId, qty: qty, idempotency_key: input.idempotency_key }, options);
       return result(data);
+    },
+
+    woo_cart_remove: async function (input, options) {
+      if (!(await confirmMutation("Remove this item from the cart?", options))) return "Cancelled by the user.";
+      return result(await apiPost("/cart/remove", { cart_item_key: input.cart_item_key, idempotency_key: input.idempotency_key }, options));
+    },
+
+    woo_coupon_apply: async function (input, options) {
+      if (!(await confirmMutation("Apply coupon '" + String(input.coupon || "") + "' to the cart?", options))) return "Cancelled by the user.";
+      return result(await apiPost("/cart/coupon", { coupon: input.coupon, idempotency_key: input.idempotency_key }, options));
+    },
+
+    bp_activity_create: async function (input, options) {
+      if (!(await confirmMutation("Publish this community update?", options))) return "Cancelled by the user.";
+      return result(await apiPost("/community/activity", { content: input.content, idempotency_key: input.idempotency_key }, options));
     },
   };
 
@@ -198,7 +225,14 @@
       if (typeof execute !== "function" && definition.path) {
         execute = function (input, options) {
           ensureActive(options);
-          return apiRequest(definition.method || "GET", definition.path, input, options).then(result);
+          var method = String(definition.method || "GET").toUpperCase();
+          var run = function () { return apiRequest(method, definition.path, input, options).then(result); };
+          if (method !== "GET" && method !== "HEAD" && definition.confirmation) {
+            return confirmMutation("Run the '" + definition.name + "' action?", options).then(function (confirmed) {
+              return confirmed ? run() : "Cancelled by the user.";
+            });
+          }
+          return run();
         };
       }
 

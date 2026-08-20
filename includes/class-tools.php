@@ -121,6 +121,23 @@ final class Tools {
         return true;
     }
 
+    /**
+     * Validate native-ability input using the same bounded subset of JSON
+     * Schema that REST route arguments enforce.
+     *
+     * @param array<string,mixed> $input
+     */
+    public static function validate_input(string $key, array $input, &$error = ''): bool {
+        $tool = self::get($key);
+        if (!$tool) {
+            $error = 'Unknown tool.';
+            return false;
+        }
+
+        $max_depth = max(2, min(16, (int) Plugin::opt('schema_max_depth', 8)));
+        return self::validate_schema($tool['inputSchema'], $input, 0, $max_depth, $error);
+    }
+
     public static function ability_name(string $key): string {
         $tool = self::get($key);
         if ($tool && !empty($tool['ability_name'])) return (string) $tool['ability_name'];
@@ -175,8 +192,13 @@ final class Tools {
                     'category'            => 'webmcp',
                     'input_schema'        => $tool['inputSchema'],
                     'output_schema'       => $tool['outputSchema'],
-                    'execute_callback'    => static function ($input = null) use ($execute) {
-                        return call_user_func($execute, is_array($input) ? $input : []);
+                    'execute_callback'    => static function ($input = null) use ($execute, $key) {
+                        $input = is_array($input) ? $input : [];
+                        $error = '';
+                        if (!Tools::validate_input($key, $input, $error)) {
+                            return new \WP_Error('webmcp_invalid_input', $error ?: 'Invalid tool input.', ['status' => 400]);
+                        }
+                        return call_user_func($execute, $input);
                     },
                     'permission_callback' => static function ($input = null) use ($key) {
                         return Tools::can_execute($key);
@@ -282,12 +304,15 @@ final class Tools {
                     'properties'           => [
                         'product_id' => ['type' => 'integer', 'minimum' => 1, 'description' => __('WooCommerce product ID.', 'wp-webmcp-layer')],
                         'qty'        => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'description' => __('Quantity to add.', 'wp-webmcp-layer')],
+                        'idempotency_key' => ['type' => 'string', 'maxLength' => 128, 'description' => __('Optional replay-protection key for this mutation.', 'wp-webmcp-layer')],
                     ],
                     'required'             => ['product_id'],
                     'additionalProperties' => false,
                 ],
                 'outputSchema' => ['type' => 'object'],
                 'annotations' => ['readOnlyHint' => false, 'untrustedContentHint' => false],
+                'confirmation' => true,
+                'idempotent' => true,
                 'option'      => 'tool_woo_cart_add',
                 'capability_option' => 'cap_woo_cart_add',
                 'requires_woocommerce' => true,
@@ -298,7 +323,9 @@ final class Tools {
                     $request = new \WP_REST_Request('POST', '/webmcp/v1/cart/add');
                     $request->set_param('product_id', $input['product_id'] ?? 0);
                     $request->set_param('qty', $input['qty'] ?? 1);
-                    return REST::cart_add($request)->get_data();
+                    if (isset($input['idempotency_key'])) $request->set_param('idempotency_key', $input['idempotency_key']);
+                    $response = REST::cart_add($request);
+                    return $response instanceof \WP_REST_Response ? $response->get_data() : $response;
                 },
             ],
         ];
@@ -316,5 +343,108 @@ final class Tools {
         $tool['outputSchema'] = $tool['outputSchema'] ?? ['type' => 'object'];
         $tool['annotations'] = $tool['annotations'] ?? ['readOnlyHint' => false, 'untrustedContentHint' => false];
         return $tool;
+    }
+
+    /**
+     * @param mixed $schema
+     * @param mixed $value
+     */
+    private static function validate_schema($schema, $value, int $depth, int $max_depth, &$error): bool {
+        if (!is_array($schema) && !is_object($schema)) {
+            $error = 'Tool schema is invalid.';
+            return false;
+        }
+        if ($depth > $max_depth) {
+            $error = 'Tool input is too deeply nested.';
+            return false;
+        }
+
+        $schema = (array) $schema;
+        $type = isset($schema['type']) ? (string) $schema['type'] : '';
+        if ($type === 'object') {
+            if (!is_array($value)) {
+                $error = 'Tool input must be an object.';
+                return false;
+            }
+            $properties = isset($schema['properties']) ? (array) $schema['properties'] : [];
+            foreach ((array) ($schema['required'] ?? []) as $required) {
+                if (!array_key_exists((string) $required, $value)) {
+                    $error = 'Required tool input is missing.';
+                    return false;
+                }
+            }
+            if (isset($schema['additionalProperties']) && $schema['additionalProperties'] === false) {
+                foreach (array_keys($value) as $key) {
+                    if (!array_key_exists((string) $key, $properties)) {
+                        $error = 'Tool input contains an unsupported field.';
+                        return false;
+                    }
+                }
+            }
+            foreach ($properties as $key => $property_schema) {
+                if (array_key_exists((string) $key, $value) && !self::validate_schema($property_schema, $value[$key], $depth + 1, $max_depth, $error)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        if ($type === 'string') {
+            if (!is_string($value)) {
+                $error = 'Tool input must be text.';
+                return false;
+            }
+            if (isset($schema['maxLength']) && mb_strlen($value) > (int) $schema['maxLength']) {
+                $error = 'Tool input text is too long.';
+                return false;
+            }
+            if (isset($schema['minLength']) && mb_strlen($value) < (int) $schema['minLength']) {
+                $error = 'Tool input text is too short.';
+                return false;
+            }
+        } elseif ($type === 'integer') {
+            if (!is_int($value)) {
+                $error = 'Tool input must be an integer.';
+                return false;
+            }
+            if (isset($schema['minimum']) && $value < (int) $schema['minimum']) {
+                $error = 'Tool input is below the allowed minimum.';
+                return false;
+            }
+            if (isset($schema['maximum']) && $value > (int) $schema['maximum']) {
+                $error = 'Tool input is above the allowed maximum.';
+                return false;
+            }
+        } elseif ($type === 'number') {
+            if (!is_int($value) && !is_float($value)) {
+                $error = 'Tool input must be numeric.';
+                return false;
+            }
+        } elseif ($type === 'boolean') {
+            if (!is_bool($value)) {
+                $error = 'Tool input must be boolean.';
+                return false;
+            }
+        } elseif ($type === 'array') {
+            if (!is_array($value)) {
+                $error = 'Tool input must be an array.';
+                return false;
+            }
+            if (isset($schema['maxItems']) && count($value) > (int) $schema['maxItems']) {
+                $error = 'Tool input contains too many items.';
+                return false;
+            }
+            if (!empty($schema['items'])) {
+                foreach ($value as $item) {
+                    if (!self::validate_schema($schema['items'], $item, $depth + 1, $max_depth, $error)) return false;
+                }
+            }
+        }
+
+        if (!empty($schema['enum']) && !in_array($value, (array) $schema['enum'], true)) {
+            $error = 'Tool input is not one of the allowed values.';
+            return false;
+        }
+        return true;
     }
 }

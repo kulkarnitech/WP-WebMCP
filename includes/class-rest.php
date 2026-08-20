@@ -93,6 +93,15 @@ final class REST {
                                 return is_scalar($param) && (int) $param >= 1 && (int) $param <= 100;
                             },
                         ],
+                        'idempotency_key' => [
+                            'required' => false,
+                            'sanitize_callback' => static function ($value) {
+                                return mb_substr((string) preg_replace('/[^A-Za-z0-9._:-]/', '', (string) $value), 0, 128);
+                            },
+                            'validate_callback' => static function ($value) {
+                                return is_scalar($value) && mb_strlen((string) $value) <= 128;
+                            },
+                        ],
                     ],
                 ]);
             }
@@ -107,6 +116,62 @@ final class REST {
      */
     public static function authorize_tool(WP_REST_Request $req, string $tool, bool $require_nonce = false) {
         return self::permission_for_tool($req, $tool, $require_nonce);
+    }
+
+    /**
+     * Execute a state-changing callback with replay protection when the caller
+     * supplies X-WebMCP-Idempotency-Key (or idempotency_key in JSON input).
+     *
+     * The cached value contains only the response payload/status; credentials
+     * and request bodies are never persisted.
+     */
+    public static function with_idempotency(WP_REST_Request $req, string $tool, callable $callback) {
+        $key = self::idempotency_key($req);
+        $cache_key = '';
+        if ($key !== '') {
+            $identity = is_user_logged_in() ? 'user:' . get_current_user_id() : 'ip:' . self::client_ip();
+            $cache_key = 'webmcp_idem_' . md5($tool . '|' . $identity . '|' . $key);
+            $cached = get_transient($cache_key);
+            if (is_array($cached) && isset($cached['data'], $cached['status'])) {
+                $response = new WP_REST_Response($cached['data'], (int) $cached['status']);
+                $response->header('X-WebMCP-Idempotent-Replay', '1');
+                self::audit($tool, 'replay', 0);
+                return $response;
+            }
+        }
+
+        $started = microtime(true);
+        try {
+            $response = call_user_func($callback);
+        } catch (\Throwable $error) {
+            self::audit($tool, 'exception', (microtime(true) - $started) * 1000);
+            return new WP_Error('webmcp_tool_exception', 'The tool could not complete safely.', ['status' => 500]);
+        }
+
+        if ($cache_key !== '' && $response instanceof WP_REST_Response) {
+            set_transient($cache_key, [
+                'data'   => $response->get_data(),
+                'status' => $response->get_status(),
+            ], max(60, (int) Plugin::opt('idempotency_ttl', 300)));
+        }
+
+        $status = $response instanceof WP_REST_Response ? $response->get_status() : 200;
+        self::audit($tool, $status >= 400 ? 'failure' : 'success', (microtime(true) - $started) * 1000);
+        return $response;
+    }
+
+    /**
+     * Lightweight audit hook. Consumers can log tool name, result class and
+     * duration without receiving content, credentials, or request bodies.
+     */
+    public static function audit(string $tool, string $result, $duration_ms): void {
+        do_action('wp_webmcp_tool_event', [
+            'tool'        => sanitize_key($tool),
+            'result'      => sanitize_key($result),
+            'duration_ms' => round((float) $duration_ms, 2),
+            'user_id'     => is_user_logged_in() ? get_current_user_id() : 0,
+            'timestamp'   => time(),
+        ]);
     }
 
     /**
@@ -126,6 +191,11 @@ final class REST {
         // Tool toggle mapping (admin options)
         if (!Tools::is_enabled($tool)) {
             return new WP_Error('webmcp_tool_disabled', 'Tool is disabled.', ['status' => 403]);
+        }
+
+        $size_check = self::request_size_check($req);
+        if ($size_check instanceof WP_Error) {
+            return $size_check;
         }
 
         // Rate limiting (applies to all endpoints if enabled)
@@ -181,11 +251,46 @@ final class REST {
             return new WP_Error(
                 'webmcp_rate_limited',
                 'Rate limit exceeded. Try again later.',
-                ['status' => 429]
+                ['status' => 429, 'retry_after' => $window]
             );
         }
 
+        if (Plugin::opt('rate_limit_global_enabled', 1)) {
+            $global_max = max(1, (int) Plugin::opt('rate_limit_global_max', 120));
+            $global_key = 'webmcp_rl_global_' . $bucket;
+            $global_count = (int) get_transient($global_key) + 1;
+            set_transient($global_key, $global_count, $window + 5);
+            if ($global_count > $global_max) {
+                return new WP_Error(
+                    'webmcp_global_rate_limited',
+                    'The site-wide WebMCP limit has been reached. Try again later.',
+                    ['status' => 429, 'retry_after' => $window]
+                );
+            }
+        }
+
         return true;
+    }
+
+    private static function request_size_check(WP_REST_Request $req) {
+        $limit = max(1024, (int) Plugin::opt('request_size_limit', 102400));
+        $body_size = strlen((string) $req->get_body());
+        $query_size = strlen((string) wp_json_encode($req->get_params()));
+        if ($body_size > $limit || $query_size > $limit) {
+            return new WP_Error(
+                'webmcp_request_too_large',
+                'Tool input exceeds the configured size limit.',
+                ['status' => 413]
+            );
+        }
+        return true;
+    }
+
+    private static function idempotency_key(WP_REST_Request $req): string {
+        $key = (string) $req->get_header('X-WebMCP-Idempotency-Key');
+        if ($key === '') $key = (string) $req->get_param('idempotency_key');
+        $key = preg_replace('/[^A-Za-z0-9._:-]/', '', $key);
+        return mb_substr((string) $key, 0, 128);
     }
 
     private static function client_ip(): string {
@@ -225,7 +330,7 @@ final class REST {
         if (!$access) {
             return new WP_REST_Response([
                 'id'        => $post_id,
-                'title'     => get_the_title($post),
+                'title'     => mb_substr(sanitize_text_field((string) get_the_title($post)), 0, 300),
                 'paywalled' => true,
                 'message'   => 'Content is behind a membership paywall.',
                 'url'       => get_permalink($post),
@@ -234,9 +339,9 @@ final class REST {
 
         return new WP_REST_Response([
             'id'        => $post_id,
-            'title'     => get_the_title($post),
+            'title'     => mb_substr(sanitize_text_field((string) get_the_title($post)), 0, 300),
             'paywalled' => false,
-            'content'   => wp_strip_all_tags(apply_filters('the_content', $post->post_content)),
+            'content'   => mb_substr(wp_strip_all_tags(apply_filters('the_content', $post->post_content)), 0, 5000),
             'url'       => get_permalink($post),
         ], 200);
     }
@@ -279,7 +384,7 @@ final class REST {
             $results[] = [
                 'id'        => $p->ID,
                 'type'      => $p->post_type,
-                'title'     => get_the_title($p),
+                'title'     => mb_substr(sanitize_text_field((string) get_the_title($p)), 0, 300),
                 'url'       => get_permalink($p),
                 'paywalled' => !$access,
             ];
@@ -299,21 +404,33 @@ final class REST {
         }
 
         // Ensure cart exists
-        if (!WC()->cart) {
+        if (!WC()->cart && function_exists('wc_load_cart')) {
             wc_load_cart();
         }
+
+        if (!WC()->cart) return new WP_REST_Response(['items' => [], 'totals' => []], 200);
 
         $items = [];
         foreach (WC()->cart->get_cart() as $cart_item) {
             $product = $cart_item['data'];
+            if (!is_object($product) || !method_exists($product, 'get_id')) continue;
             $items[] = [
+                'cart_item_key' => sanitize_text_field((string) ($cart_item['key'] ?? '')),
                 'product_id' => $product->get_id(),
-                'name'       => $product->get_name(),
+                'name'       => sanitize_text_field((string) $product->get_name()),
                 'qty'        => (int) $cart_item['quantity'],
+                'price'      => method_exists($product, 'get_price') ? (string) $product->get_price() : '',
+                'line_subtotal' => isset($cart_item['line_subtotal']) ? (string) $cart_item['line_subtotal'] : '',
             ];
         }
 
-        return new WP_REST_Response(['items' => $items], 200);
+        $totals = [];
+        foreach (['get_cart_contents_total' => 'contents', 'get_shipping_total' => 'shipping', 'get_total_tax' => 'tax', 'get_total' => 'total'] as $method => $key) {
+            if (method_exists(WC()->cart, $method)) $totals[$key] = (string) WC()->cart->{$method}();
+        }
+        if (function_exists('get_woocommerce_currency')) $totals['currency'] = sanitize_text_field((string) get_woocommerce_currency());
+
+        return new WP_REST_Response(['items' => $items, 'item_count' => count($items), 'totals' => $totals], 200);
     }
 
     /*
@@ -321,7 +438,8 @@ final class REST {
      * Woo: Add to Cart
      * =====================================================
      */
-    public static function cart_add(WP_REST_Request $req): WP_REST_Response {
+    public static function cart_add(WP_REST_Request $req) {
+        return REST::with_idempotency($req, 'woo_cart_add', static function () use ($req) {
         if (!class_exists('WooCommerce') || !function_exists('WC')) {
             return new WP_REST_Response(['error' => 'WooCommerce not active'], 400);
         }
@@ -350,7 +468,9 @@ final class REST {
 
         return new WP_REST_Response([
             'ok'      => true,
-            'message' => 'Added to cart'
+            'message' => 'Added to cart',
+            'cart'    => REST::cart_view($req)->get_data(),
         ], 200);
+        });
     }
 }

@@ -7,7 +7,10 @@ Adds a WebMCP tool layer to WordPress with:
 
 -   Content search tools
 -   PMPro-safe post retrieval
--   WooCommerce cart tools
+-   WooCommerce catalog, checkout metadata, and cart tools
+-   Core menu, taxonomy, and site metadata tools
+-   PMPro membership-status tools
+-   BuddyPress/BuddyBoss members, groups, and activity tools
 -   Role-based exposure control
 -   REST rate limiting
 -   Browser WebMCP capability detection
@@ -31,7 +34,7 @@ compatibility and server-side enforcement layer for older WordPress versions.
 
 ## Current implementation status
 
-**Version 0.2.0 — Phase 1 foundation complete.**
+**Version 0.3.0 — Phases 1–4 implementation complete.**
 
 -   Current WebMCP browser registration with a legacy preview fallback
 -   Central registry shared by browser tools, admin previews, REST checks, and
@@ -39,25 +42,26 @@ compatibility and server-side enforcement layer for older WordPress versions.
 -   Hardened WordPress and WooCommerce REST validation, capability gates,
     nonces, rate limiting, and purchasability checks
 -   PMPro-safe content redaction
--   First BuddyPress/BuddyBoss `bp_members` read-only adapter
--   Roadmap for WooCommerce products, PMPro membership status, community
-    extensions, mutation confirmations, and integration testing
+-   Discovery manifest, nonce endpoint, well-known metadata, Link headers, and
+    visitor-filtered API catalogs
+-   Core WordPress, WooCommerce, PMPro, and BuddyPress/BuddyBoss adapters
+-   Confirmation-gated cart/community mutations with idempotency replay defense
+-   Global/per-IP rate limits, request-size and schema-depth bounds, and audit hooks
+-   Admin API examples, deployment guidance, and a WordPress PHPUnit harness
 
 The blue token connector used by [webmcp.dev](https://webmcp.dev/) is
-intentionally deferred to the final optional phase because it requires an
-external/local WebSocket bridge. It is not part of the current WebMCP browser
-draft.
+intentionally deferred to the final optional phase. It is not enabled or
+required by this release.
 
 ## Reference alignment
 
-Phase 1 follows the current `document.modelContext.registerTool()` contract
+The plugin follows the current `document.modelContext.registerTool()` contract
 used by the [WebMCP draft](https://webmachinelearning.github.io/webmcp/) and
 the [WebMCP-org/MCP-B packages](https://github.com/WebMCP-org/npm-packages).
 The [WordPress.org WebMCP Bridge](https://wordpress.org/plugins/webmcp-bridge/)
-is a useful feature reference, but its broader manifest/discovery surface and
-WooCommerce catalog, coupon, and checkout tools are still planned here. See
-[`WEBMCP-WORDPRESS-PLAN.md`](WEBMCP-WORDPRESS-PLAN.md) for the alignment audit
-and prioritized Phase 2 gaps.
+and [WebMCP organization packages](https://github.com/webmcp/) were used as
+compatibility references. See [`WEBMCP-WORDPRESS-PLAN.md`](WEBMCP-WORDPRESS-PLAN.md)
+for the alignment audit and the deferred connector phase.
 
 ------------------------------------------------------------------------
 
@@ -68,6 +72,8 @@ and prioritized Phase 2 gaps.
     ├── wp-webmcp-layer.php
     ├── includes/
     │   ├── class-plugin.php
+    │   ├── class-core.php
+    │   ├── class-discovery.php
     │   ├── class-rest.php
     │   ├── class-tools.php
     │   ├── class-admin.php
@@ -88,15 +94,31 @@ and prioritized Phase 2 gaps.
 
 -   wp_search
 -   wp_get_post (PMPro-safe)
+-   wp_get_menu
+-   wp_get_categories
+-   wp_get_site_info
 
 ### WooCommerce (optional)
 
 -   woo_cart_view
 -   woo_cart_add
+-   woo_product_search
+-   woo_product_get
+-   woo_product_categories
+-   woo_checkout_fields
+-   woo_cart_remove
+-   woo_coupon_apply
+
+### Paid Memberships Pro (optional)
+
+-   pmpro_memberships (current visitor only)
 
 ### BuddyPress/BuddyBoss (optional)
 
 -   bp_members (read-only, privacy-aware proxy to the plugin REST controller)
+-   bp_groups
+-   bp_activity
+-   bp_activity_create (disabled by default; confirmation required)
 
 Mutating tools are browser-only by default so a site can require a human
 confirmation before changing state. Integrations can opt into native mutation
@@ -118,6 +140,9 @@ GET /search?q=keyword\
 GET /cart/view\
 POST /cart/add\
 GET /community/members?search=...&page=1
+GET /manifest
+GET /discovery
+GET /nonce
 
 ------------------------------------------------------------------------
 
@@ -130,6 +155,12 @@ GET /community/members?search=...&page=1
 -   Rate limiting
 -   No paywall leakage
 -   Strict route argument schemas and WooCommerce purchasability checks
+-   Idempotency keys for state-changing tools
+-   Request-size and schema-depth bounds
+-   Discovery responses are private/no-store and vary by cookie
+
+See [`docs/deployment.md`](docs/deployment.md) for HTTPS, caching, Permissions
+Policy, and proxy guidance.
 
 ------------------------------------------------------------------------
 

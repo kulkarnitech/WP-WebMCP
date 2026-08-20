@@ -1,6 +1,6 @@
 === WP WebMCP Layer === Contributors: kulkarnitech Tags: webmcp, ai,
 woo, pmpro, rest, api Requires at least: 6.0 Tested up to: 6.5 Requires
-PHP: 7.4 Stable tag: 0.2.0 License: GPLv2 or later License URI:
+PHP: 7.4 Stable tag: 0.3.0 License: GPLv2 or later License URI:
 https://www.gnu.org/licenses/gpl-2.0.html
 
 Adds a progressive WebMCP tool layer to WordPress with PMPro-safe content
@@ -18,8 +18,12 @@ Features:
 
 -   Content search tool
 -   Post retrieval tool (PMPro-safe)
--   WooCommerce cart view & add tools
--   BuddyPress/BuddyBoss member search (when active)
+-   WooCommerce catalog, checkout metadata, and cart tools
+-   Core menu, taxonomy, and site metadata tools
+-   PMPro membership status (current visitor only)
+-   BuddyPress/BuddyBoss member, group, and activity tools
+-   Discovery manifest, nonce endpoint, and well-known metadata
+-   Confirmation-gated mutations with idempotency replay defense
 -   Role-based tool exposure
 -   Rate limiting
 -   Browser WebMCP detection
@@ -44,6 +48,13 @@ is installed.
 is automatically protected.
 
 == Changelog ==
+
+= 0.3.0 =
+* Add visitor-filtered manifest, discovery, nonce, Link, and well-known metadata.
+* Add core WordPress, WooCommerce catalog, PMPro, and community adapters.
+* Add confirmed cart/community mutations with idempotency protection.
+* Add global rate limiting, request-size/schema bounds, audit hooks, admin examples, and tests.
+* Defer the optional webmcp.dev blue connector.
 
 = 0.2.0 =
 * Align browser registration with the current WebMCP draft API

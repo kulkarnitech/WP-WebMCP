@@ -31,11 +31,15 @@ final class Plugin {
         // Core
         require_once WP_WEBMCP_LAYER_PATH . 'includes/class-admin.php';
         require_once WP_WEBMCP_LAYER_PATH . 'includes/class-adminbar.php';
+        require_once WP_WEBMCP_LAYER_PATH . 'includes/class-core.php';
+        require_once WP_WEBMCP_LAYER_PATH . 'includes/class-discovery.php';
         require_once WP_WEBMCP_LAYER_PATH . 'includes/class-rest.php';
         require_once WP_WEBMCP_LAYER_PATH . 'includes/class-tools.php';
 
         Admin::init();
         AdminBar::init();
+        Core::init();
+        Discovery::init();
         REST::init();
         Tools::init();
 
