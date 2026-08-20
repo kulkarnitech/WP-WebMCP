@@ -20,6 +20,60 @@ when no browser exposes `document.modelContext`.
    Mutations stay browser-only unless a site explicitly opts into the
    `wp_webmcp_register_native_mutation` filter.
 
+## Reference alignment audit (2026-08-20)
+
+**Conclusion: Phase 1 is aligned with the current WebMCP browser direction,
+but it is not yet feature-complete compared with the WordPress.org WebMCP
+Bridge plugin.**
+
+### What is aligned
+
+- The browser bridge uses `document.modelContext.registerTool()` and accepts
+  the early `navigator.modelContext` aliases only as compatibility fallbacks.
+  This matches the current WebMCP draft and the WebMCP-org/MCP-B packages.
+- Tool definitions are schema-driven and centralized, so browser registration,
+  REST authorization, admin previews, and optional WordPress Abilities share a
+  contract.
+- The server stays local to WordPress. No external relay, telemetry, or token
+  service is required for the core browser path.
+- State-changing WooCommerce actions are separated from read-only tools and
+  use capability, nonce, purchasability, confirmation, and rate-limit gates.
+
+### Deliberate differences
+
+- The plugin remains compatible with WordPress 6.0/PHP 7.4 and conditionally
+  uses WordPress Abilities on newer WordPress versions. A WordPress 6.9+/PHP 8
+  requirement would unnecessarily narrow the install base at this stage.
+- The blue `webmcp.dev` connector and MCP-B/local-relay transport remain an
+  optional final phase. They must not become an implicit external dependency.
+- The WordPress.org plugin currently documents `navigator.modelContext` APIs,
+  while the current W3C draft and MCP-B documentation use
+  `document.modelContext.registerTool()`. We follow the latter and retain a
+  legacy `navigator` fallback for preview compatibility.
+
+### Prioritized gaps to close
+
+1. **Discovery contract (Phase 2A):** add a filtered `/manifest` endpoint and a
+   small `/discovery` response, then evaluate RFC 8288 Link headers/HTML tags,
+   API Catalog, MCP Server Card, Agent Skills, and service-doc/service-desc
+   metadata. These should advertise only enabled, visitor-authorized tools.
+2. **Core and WooCommerce coverage (Phase 2B):** add menu, taxonomy, and site
+   metadata tools; then Woo product search/detail, cart removal, coupons,
+   checkout-field schema, and product categories using supported Woo APIs.
+3. **Auth and abuse hardening (Phase 2C):** add a fresh-nonce endpoint for
+   long-lived browser sessions, an optional global execution ceiling alongside
+   the current per-IP limiter, input-size/schema depth limits, and explicit
+   output sanitization/redaction tests.
+4. **Operations (Phase 4):** add WordPress Playground/plugin-fixture tests,
+   live admin API examples, and cache-aware discovery tests before claiming
+   WordPress.org production readiness.
+
+The comparison reference for WordPress Abilities bridging is
+[Code Atlantic's WebMCP Abilities](https://github.com/code-atlantic/webmcp-abilities).
+It reinforces the same useful boundaries: re-check permission callbacks at
+execution time, keep an admin allowlist, expose a nonce endpoint, cap input,
+and test REST authorization/rate limiting.
+
 ## Integration roadmap
 
 | Integration | First tools | Data boundary | Write tools |
