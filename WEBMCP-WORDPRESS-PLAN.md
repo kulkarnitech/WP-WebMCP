@@ -1,6 +1,6 @@
 # WebMCP for WordPress: implementation plan
 
-This document turns the WebMCP research and the `WP-WebMCP` prototype into a
+This document turns the WebMCP research and the `WebMCP Layer for WordPress` prototype into a
 deployable roadmap. WebMCP is still a draft browser API, so WordPress support
 must remain progressive enhancement: the site and REST API continue to work
 when no browser exposes `document.modelContext`.
@@ -18,12 +18,12 @@ when no browser exposes `document.modelContext`.
    checks to cart operations, and rate-limits requests.
 4. Read-only tools may be exposed as WordPress Abilities on WordPress 6.9+.
    Mutations stay browser-only unless a site explicitly opts into the
-   `wp_webmcp_register_native_mutation` filter.
+   `webmcp_layer_register_native_mutation` filter.
 
-## Reference alignment audit (2026-08-20)
+## Reference alignment audit (2026-09-03)
 
 **Conclusion: the native browser path and planned ecosystem surfaces are
-implemented in 0.3.0; only the optional blue connector remains deferred.**
+implemented in 0.4.0; only the optional blue connector remains deferred.**
 
 ### What is aligned
 
@@ -74,7 +74,7 @@ and test REST authorization/rate limiting.
 
 | Integration | First tools | Data boundary | Write tools |
 | --- | --- | --- | --- |
-| Core WordPress | `wp_search`, `wp_get_post` | Published content; PMPro redaction | None in phase 1 |
+| Core WordPress | `site_search`, `site_get_post` | Published content; PMPro redaction | None in phase 1 |
 | WooCommerce | `woo_product_search`, `woo_product_get`, `woo_cart_view` | Store API/customer session semantics; no private orders | `woo_cart_add`, then checkout only with confirmation |
 | Paid Memberships Pro | Access-aware variants of core tools; `pmpro_memberships` | Use PMPro access functions and never return protected content | Membership changes require explicit admin/member policy |
 | BuddyPress | `bp_members`, `bp_groups`, `bp_activity` | Public/profile visibility and per-endpoint BP permissions | No writes in phase 1 |
@@ -83,7 +83,7 @@ and test REST authorization/rate limiting.
 | Forms/CRM plugins | `form_list`, `form_get` (admin-gated) | Never expose submissions to public visitors | Submission/create tools require capability + confirmation |
 
 Each integration should ship as a small adapter that registers tools through
-`wp_webmcp_register_tools`. It should use the plugin's documented REST/API or
+`webmcp_layer_register_tools`. It should use the plugin's documented REST/API or
 service layer, not direct SQL, and should return bounded, schema-valid output.
 
 ## Phases

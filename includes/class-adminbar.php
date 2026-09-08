@@ -1,5 +1,5 @@
 <?php
-namespace WP_WebMCP_Layer;
+namespace WebMCP_Layer;
 
 if (!defined('ABSPATH')) exit;
 
@@ -22,10 +22,10 @@ final class AdminBar {
         $active = $enabled;
 
         $title = $active ? 'WebMCP: Active' : 'WebMCP: Disabled';
-        $class = $active ? 'wp-webmcp-dot wp-webmcp-dot--green' : 'wp-webmcp-dot wp-webmcp-dot--red';
+        $class = $active ? 'webmcp-layer-dot webmcp-layer-dot--green' : 'webmcp-layer-dot webmcp-layer-dot--red';
 
         $bar->add_node([
-            'id'    => 'wp-webmcp-layer',
+            'id'    => 'webmcp-layer-for-wordpress',
             'title' => '<span class="' . esc_attr($class) . '"></span>' . esc_html($title),
             'href'  => admin_url('options-general.php?page=' . Admin::PAGE_SLUG),
             'meta'  => [
@@ -37,8 +37,8 @@ final class AdminBar {
         $summary = self::summary_lines();
         foreach ($summary as $i => $line) {
             $bar->add_node([
-                'id'     => 'wp-webmcp-layer-' . $i,
-                'parent' => 'wp-webmcp-layer',
+                'id'     => 'webmcp-layer-for-wordpress-' . $i,
+                'parent' => 'webmcp-layer-for-wordpress',
                 'title'  => esc_html($line),
                 'href'   => admin_url('options-general.php?page=' . Admin::PAGE_SLUG),
             ]);
@@ -55,8 +55,8 @@ final class AdminBar {
 
         $lines[] = $enabled ? 'Layer: Enabled' : 'Layer: Disabled';
 
-        $lines[] = 'wp_search: ' . (Tools::is_enabled('wp_search') ? 'On' : 'Off');
-        $lines[] = 'wp_get_post: ' . (Tools::is_enabled('wp_get_post') ? 'On' : 'Off');
+        $lines[] = 'site_search: ' . (Tools::is_enabled('site_search') ? 'On' : 'Off');
+        $lines[] = 'site_get_post: ' . (Tools::is_enabled('site_get_post') ? 'On' : 'Off');
 
         if ($hasWoo) {
             $lines[] = 'Woo cart view: ' . (Tools::is_enabled('woo_cart_view') ? 'On' : 'Off');
@@ -84,7 +84,7 @@ final class AdminBar {
         if (!is_user_logged_in() || !current_user_can('manage_options')) return;
 
         $css = '
-        #wpadminbar .wp-webmcp-dot{
+        #wpadminbar .webmcp-layer-dot{
             display:inline-block;
             width:10px;height:10px;
             border-radius:50%;
@@ -92,12 +92,12 @@ final class AdminBar {
             vertical-align:middle;
             box-shadow:0 0 0 1px rgba(255,255,255,0.35) inset;
         }
-        #wpadminbar .wp-webmcp-dot--green{ background:#22c55e; }
-        #wpadminbar .wp-webmcp-dot--red{ background:#ef4444; }
+        #wpadminbar .webmcp-layer-dot--green{ background:#22c55e; }
+        #wpadminbar .webmcp-layer-dot--red{ background:#ef4444; }
         ';
 
-        wp_register_style('wp-webmcp-adminbar', false, [], WP_WEBMCP_LAYER_VERSION);
-        wp_enqueue_style('wp-webmcp-adminbar');
-        wp_add_inline_style('wp-webmcp-adminbar', $css);
+        wp_register_style('webmcp-layer-adminbar', false, [], WEBMCP_LAYER_VERSION);
+        wp_enqueue_style('webmcp-layer-adminbar');
+        wp_add_inline_style('webmcp-layer-adminbar', $css);
     }
 }

@@ -1,5 +1,5 @@
 /**
- * WP WebMCP Layer - browser bridge.
+ * WebMCP Layer for WordPress - browser bridge.
  *
  * The current WebMCP draft exposes document.modelContext.registerTool(). A
  * legacy navigator.modelContext.provideContext() fallback is kept for early
@@ -11,7 +11,7 @@
   var MAX_RESULT_CHARS = 12000;
 
   function config() {
-    return window.WP_WEBMCP || null;
+    return window.WEBMCP_LAYER || null;
   }
 
   function contextApi() {
@@ -165,13 +165,13 @@
   }
 
   var handlers = {
-    wp_search: async function (input, options) {
+    site_search: async function (input, options) {
       ensureActive(options);
       var data = await apiGet("/search", { q: input.q, type: input.type }, options);
       return result(data);
     },
 
-    wp_get_post: async function (input, options) {
+    site_get_post: async function (input, options) {
       ensureActive(options);
       var data = await apiGet("/post", { id: Number(input.id || 0) }, options);
       return result(data);
@@ -306,7 +306,7 @@
       // WebMCP is progressive enhancement; never break the site if a browser
       // preview rejects a schema or changes the draft API.
       if (window.console && typeof window.console.warn === "function") {
-        window.console.warn("WP WebMCP registration failed:", error);
+        window.console.warn("WebMCP Layer for WordPress registration failed:", error);
       }
     }
   }

@@ -1,10 +1,10 @@
 <?php
-namespace WP_WebMCP_Layer;
+namespace WebMCP_Layer;
 
 if (!defined('ABSPATH')) exit;
 
 /**
- * Core plugin bootstrapper (loaded by wp-webmcp-layer.php)
+ * Core plugin bootstrapper (loaded by webmcp-layer-for-wordpress.php)
  * - Conditionally loads Woo/PMPro integration classes only if those plugins are active
  * - Boots Admin settings, Admin bar indicator, and REST API
  * - Enqueues frontend WebMCP registration JS based on admin toggles + capability gates
@@ -24,17 +24,36 @@ final class Plugin {
         return self::$instance;
     }
 
+    /**
+     * Seed a complete, sanitized option set when the plugin is activated.
+     * Runtime migration remains in Admin::init() for updates that do not
+     * execute activation hooks (for example, a file replacement deployment).
+     */
+    public static function activate(): void {
+        require_once WEBMCP_LAYER_PATH . 'includes/class-admin.php';
+
+        Admin::activate();
+    }
+
+    /**
+     * Preserve settings on deactivation. The plugin has no scheduled jobs,
+     * rewrite rules, or other temporary resources that require teardown.
+     */
+    public static function deactivate(): void {
+        // Intentionally empty: rate-limit and idempotency records expire.
+    }
+
     private function __construct() {
         $this->has_woo   = class_exists('WooCommerce');
         $this->has_pmpro = function_exists('pmpro_has_membership_access');
 
         // Core
-        require_once WP_WEBMCP_LAYER_PATH . 'includes/class-admin.php';
-        require_once WP_WEBMCP_LAYER_PATH . 'includes/class-adminbar.php';
-        require_once WP_WEBMCP_LAYER_PATH . 'includes/class-core.php';
-        require_once WP_WEBMCP_LAYER_PATH . 'includes/class-discovery.php';
-        require_once WP_WEBMCP_LAYER_PATH . 'includes/class-rest.php';
-        require_once WP_WEBMCP_LAYER_PATH . 'includes/class-tools.php';
+        require_once WEBMCP_LAYER_PATH . 'includes/class-admin.php';
+        require_once WEBMCP_LAYER_PATH . 'includes/class-adminbar.php';
+        require_once WEBMCP_LAYER_PATH . 'includes/class-core.php';
+        require_once WEBMCP_LAYER_PATH . 'includes/class-discovery.php';
+        require_once WEBMCP_LAYER_PATH . 'includes/class-rest.php';
+        require_once WEBMCP_LAYER_PATH . 'includes/class-tools.php';
 
         Admin::init();
         AdminBar::init();
@@ -45,17 +64,17 @@ final class Plugin {
 
         // Integrations (load only when active)
         if ($this->has_pmpro) {
-            require_once WP_WEBMCP_LAYER_PATH . 'includes/class-pmpro.php';
+            require_once WEBMCP_LAYER_PATH . 'includes/class-pmpro.php';
             PMPro::init();
         }
 
         if ($this->has_woo) {
-            require_once WP_WEBMCP_LAYER_PATH . 'includes/class-woocommerce.php';
+            require_once WEBMCP_LAYER_PATH . 'includes/class-woocommerce.php';
             WooCommerce::init();
         }
 
         if (function_exists('buddypress') || defined('BP_VERSION') || class_exists('BuddyPress') || class_exists('BuddyBoss_Platform') || class_exists('BuddyBossPlatform')) {
-            require_once WP_WEBMCP_LAYER_PATH . 'includes/class-community.php';
+            require_once WEBMCP_LAYER_PATH . 'includes/class-community.php';
             Community::init();
         }
 
@@ -104,15 +123,19 @@ final class Plugin {
             $tool_flags[$key] = 1;
         }
 
+        $script = defined('SCRIPT_DEBUG') && SCRIPT_DEBUG
+            ? 'assets/webmcp.js'
+            : 'assets/webmcp.min.js';
+
         wp_enqueue_script(
-            'wp-webmcp-layer',
-            WP_WEBMCP_LAYER_URL . 'assets/webmcp.js',
+            'webmcp-layer-for-wordpress',
+            WEBMCP_LAYER_URL . $script,
             [],
-            WP_WEBMCP_LAYER_VERSION,
+            WEBMCP_LAYER_VERSION,
             true
         );
 
-        wp_localize_script('wp-webmcp-layer', 'WP_WEBMCP', [
+        wp_localize_script('webmcp-layer-for-wordpress', 'WEBMCP_LAYER', [
             'restUrl'  => esc_url_raw(rest_url('webmcp/v1')),
             'nonce'    => wp_create_nonce('wp_rest'),
             'siteName' => get_bloginfo('name'),

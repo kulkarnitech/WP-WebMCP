@@ -1,5 +1,5 @@
 <?php
-namespace WP_WebMCP_Layer;
+namespace WebMCP_Layer;
 
 if (!defined('ABSPATH')) exit;
 
@@ -32,7 +32,7 @@ final class Tools {
         if (self::$extensions_loaded) return;
 
         self::$extensions_loaded = true;
-        do_action('wp_webmcp_register_tools', new self());
+        do_action('webmcp_layer_register_tools', new self());
     }
 
     /**
@@ -69,7 +69,7 @@ final class Tools {
             $definitions[$key] = $definition;
         }
 
-        return apply_filters('wp_webmcp_frontend_definitions', $definitions);
+        return apply_filters('webmcp_layer_frontend_definitions', $definitions);
     }
 
     public static function get(string $key): ?array {
@@ -155,8 +155,8 @@ final class Tools {
         wp_register_ability_category(
             'webmcp',
             [
-                'label'       => __('WebMCP', 'wp-webmcp-layer'),
-                'description' => __('Capabilities exposed to browser-based WebMCP agents.', 'wp-webmcp-layer'),
+                'label'       => __('WebMCP', 'webmcp-layer-for-wordpress'),
+                'description' => __('Capabilities exposed to browser-based WebMCP agents.', 'webmcp-layer-for-wordpress'),
             ]
         );
     }
@@ -174,7 +174,7 @@ final class Tools {
             // opts into native WordPress Abilities. The browser bridge can
             // require human confirmation; a server-side ability has no
             // equivalent prompt by default.
-            if (empty($tool['annotations']['readOnlyHint']) && !apply_filters('wp_webmcp_register_native_mutation', false, $key, $tool)) {
+            if (empty($tool['annotations']['readOnlyHint']) && !apply_filters('webmcp_layer_register_native_mutation', false, $key, $tool)) {
                 continue;
             }
 
@@ -224,16 +224,16 @@ final class Tools {
         if (self::$tools) return;
 
         self::$tools = [
-            'wp_search' => [
-                'key'         => 'wp_search',
-                'name'        => 'wp_search',
-                'title'       => __('Search site content', 'wp-webmcp-layer'),
-                'description' => __('Searches published WordPress content and returns concise, access-aware results.', 'wp-webmcp-layer'),
+            'site_search' => [
+                'key'         => 'site_search',
+                'name'        => 'site_search',
+                'title'       => __('Search site content', 'webmcp-layer-for-wordpress'),
+                'description' => __('Searches published WordPress content and returns concise, access-aware results.', 'webmcp-layer-for-wordpress'),
                 'inputSchema' => [
                     'type'                 => 'object',
                     'properties'           => [
-                        'q'    => ['type' => 'string', 'description' => __('Search query text.', 'wp-webmcp-layer'), 'maxLength' => 200],
-                        'type' => ['type' => 'string', 'enum' => ['post', 'page', 'product'], 'description' => __('Optional content type.', 'wp-webmcp-layer')],
+                        'q'    => ['type' => 'string', 'description' => __('Search query text.', 'webmcp-layer-for-wordpress'), 'maxLength' => 200],
+                        'type' => ['type' => 'string', 'enum' => ['post', 'page', 'product'], 'description' => __('Optional content type.', 'webmcp-layer-for-wordpress')],
                     ],
                     'required'             => ['q'],
                     'additionalProperties' => false,
@@ -244,11 +244,11 @@ final class Tools {
                     'required'   => ['results'],
                 ],
                 'annotations' => ['readOnlyHint' => true, 'untrustedContentHint' => true],
-                'option'      => 'tool_wp_search',
-                'capability_option' => 'cap_wp_search',
+                'option'      => 'tool_site_search',
+                'capability_option' => 'cap_site_search',
                 'method'      => 'GET',
                 'path'        => '/search',
-                'ability_name' => 'webmcp/wp-search',
+                'ability_name' => 'webmcp/site-search',
                 'execute_callback' => static function (array $input) {
                     $request = new \WP_REST_Request('GET', '/webmcp/v1/search');
                     $request->set_param('q', $input['q'] ?? '');
@@ -256,24 +256,24 @@ final class Tools {
                     return REST::search($request)->get_data();
                 },
             ],
-            'wp_get_post' => [
-                'key'         => 'wp_get_post',
-                'name'        => 'wp_get_post',
-                'title'       => __('Get a WordPress post', 'wp-webmcp-layer'),
-                'description' => __('Fetches a published post or page by ID while respecting membership access.', 'wp-webmcp-layer'),
+            'site_get_post' => [
+                'key'         => 'site_get_post',
+                'name'        => 'site_get_post',
+                'title'       => __('Get a WordPress post', 'webmcp-layer-for-wordpress'),
+                'description' => __('Fetches a published post or page by ID while respecting membership access.', 'webmcp-layer-for-wordpress'),
                 'inputSchema' => [
                     'type'                 => 'object',
-                    'properties'           => ['id' => ['type' => 'integer', 'minimum' => 1, 'description' => __('WordPress post ID.', 'wp-webmcp-layer')]],
+                    'properties'           => ['id' => ['type' => 'integer', 'minimum' => 1, 'description' => __('WordPress post ID.', 'webmcp-layer-for-wordpress')]],
                     'required'             => ['id'],
                     'additionalProperties' => false,
                 ],
                 'outputSchema' => ['type' => 'object'],
                 'annotations' => ['readOnlyHint' => true, 'untrustedContentHint' => true],
-                'option'      => 'tool_wp_get_post',
-                'capability_option' => 'cap_wp_get_post',
+                'option'      => 'tool_site_get_post',
+                'capability_option' => 'cap_site_get_post',
                 'method'      => 'GET',
                 'path'        => '/post',
-                'ability_name' => 'webmcp/wp-get-post',
+                'ability_name' => 'webmcp/site-get-post',
                 'execute_callback' => static function (array $input) {
                     $request = new \WP_REST_Request('GET', '/webmcp/v1/post');
                     $request->set_param('id', $input['id'] ?? 0);
@@ -283,8 +283,8 @@ final class Tools {
             'woo_cart_view' => [
                 'key'         => 'woo_cart_view',
                 'name'        => 'woo_cart_view',
-                'title'       => __('View the shopping cart', 'wp-webmcp-layer'),
-                'description' => __('Returns the current customer’s WooCommerce cart contents and quantities.', 'wp-webmcp-layer'),
+                'title'       => __('View the shopping cart', 'webmcp-layer-for-wordpress'),
+                'description' => __('Returns the current customer’s WooCommerce cart contents and quantities.', 'webmcp-layer-for-wordpress'),
                 'inputSchema' => ['type' => 'object', 'properties' => (object) [], 'required' => [], 'additionalProperties' => false],
                 'outputSchema' => ['type' => 'object'],
                 'annotations' => ['readOnlyHint' => true, 'untrustedContentHint' => true],
@@ -301,14 +301,14 @@ final class Tools {
             'woo_cart_add' => [
                 'key'         => 'woo_cart_add',
                 'name'        => 'woo_cart_add',
-                'title'       => __('Add a product to the cart', 'wp-webmcp-layer'),
-                'description' => __('Adds a purchasable WooCommerce product and quantity to the current cart after user confirmation.', 'wp-webmcp-layer'),
+                'title'       => __('Add a product to the cart', 'webmcp-layer-for-wordpress'),
+                'description' => __('Adds a purchasable WooCommerce product and quantity to the current cart after user confirmation.', 'webmcp-layer-for-wordpress'),
                 'inputSchema' => [
                     'type'                 => 'object',
                     'properties'           => [
-                        'product_id' => ['type' => 'integer', 'minimum' => 1, 'description' => __('WooCommerce product ID.', 'wp-webmcp-layer')],
-                        'qty'        => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'description' => __('Quantity to add.', 'wp-webmcp-layer')],
-                        'idempotency_key' => ['type' => 'string', 'maxLength' => 128, 'description' => __('Optional replay-protection key for this mutation.', 'wp-webmcp-layer')],
+                        'product_id' => ['type' => 'integer', 'minimum' => 1, 'description' => __('WooCommerce product ID.', 'webmcp-layer-for-wordpress')],
+                        'qty'        => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'description' => __('Quantity to add.', 'webmcp-layer-for-wordpress')],
+                        'idempotency_key' => ['type' => 'string', 'maxLength' => 128, 'description' => __('Optional replay-protection key for this mutation.', 'webmcp-layer-for-wordpress')],
                     ],
                     'required'             => ['product_id'],
                     'additionalProperties' => false,

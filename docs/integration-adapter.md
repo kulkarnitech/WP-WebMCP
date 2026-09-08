@@ -3,7 +3,7 @@
 Third-party plugins can add a read-only tool without changing the bridge:
 
 ```php
-add_action('wp_webmcp_register_tools', function ($registry) {
+add_action('webmcp_layer_register_tools', function ($registry) {
     $registry->register([
         'key' => 'acme_public_items',
         'name' => 'acme_public_items',

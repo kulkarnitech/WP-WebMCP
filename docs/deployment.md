@@ -3,7 +3,7 @@
 1. Serve the site over HTTPS and keep WordPress same-origin cookies enabled. The
    browser bridge uses the WordPress REST nonce (`X-WP-Nonce`) and does not send
    credentials to an external relay.
-2. Review every tool in **Settings → WP WebMCP Layer**. Read tools can be public,
+2. Review every tool in **Settings → WebMCP Layer for WordPress**. Read tools can be public,
    while cart and community mutations should stay capability-gated and require
    browser confirmation.
 3. Keep the default request-size, rate-limit, schema-depth, and idempotency

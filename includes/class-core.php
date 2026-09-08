@@ -1,5 +1,5 @@
 <?php
-namespace WP_WebMCP_Layer;
+namespace WebMCP_Layer;
 
 use WP_REST_Request;
 use WP_REST_Response;
@@ -16,31 +16,31 @@ if (!defined('ABSPATH')) exit;
 final class Core {
 
     public static function init(): void {
-        add_action('wp_webmcp_register_tools', [__CLASS__, 'register_tools'], 10);
+        add_action('webmcp_layer_register_tools', [__CLASS__, 'register_tools'], 10);
         add_action('rest_api_init', [__CLASS__, 'register_routes']);
     }
 
     public static function register_tools(Tools $registry): void {
         $registry->register([
-            'key'              => 'wp_get_menu',
-            'name'             => 'wp_get_menu',
-            'title'            => __('Get a navigation menu', 'wp-webmcp-layer'),
-            'description'      => __('Returns visible navigation menu items for a menu location or menu ID.', 'wp-webmcp-layer'),
+            'key'              => 'site_get_menu',
+            'name'             => 'site_get_menu',
+            'title'            => __('Get a navigation menu', 'webmcp-layer-for-wordpress'),
+            'description'      => __('Returns visible navigation menu items for a menu location or menu ID.', 'webmcp-layer-for-wordpress'),
             'inputSchema'      => [
                 'type'                 => 'object',
                 'properties'           => [
-                    'location' => ['type' => 'string', 'maxLength' => 64, 'description' => __('Registered menu location, such as primary.', 'wp-webmcp-layer')],
-                    'menu_id'  => ['type' => 'integer', 'minimum' => 1, 'description' => __('Optional navigation menu ID.', 'wp-webmcp-layer')],
+                    'location' => ['type' => 'string', 'maxLength' => 64, 'description' => __('Registered menu location, such as primary.', 'webmcp-layer-for-wordpress')],
+                    'menu_id'  => ['type' => 'integer', 'minimum' => 1, 'description' => __('Optional navigation menu ID.', 'webmcp-layer-for-wordpress')],
                 ],
                 'additionalProperties' => false,
             ],
             'outputSchema'    => ['type' => 'object'],
             'annotations'     => ['readOnlyHint' => true, 'untrustedContentHint' => true],
-            'option'          => 'tool_wp_get_menu',
+            'option'          => 'tool_site_get_menu',
             'default_enabled' => true,
             'method'          => 'GET',
             'path'            => '/menu',
-            'ability_name'    => 'webmcp/wp-get-menu',
+            'ability_name'    => 'webmcp/site-get-menu',
             'execute_callback' => static function (array $input) {
                 $request = new WP_REST_Request('GET', '/webmcp/v1/menu');
                 foreach (['location', 'menu_id'] as $param) {
@@ -51,10 +51,10 @@ final class Core {
         ]);
 
         $registry->register([
-            'key'              => 'wp_get_categories',
-            'name'             => 'wp_get_categories',
-            'title'            => __('List taxonomy terms', 'wp-webmcp-layer'),
-            'description'      => __('Lists public WordPress taxonomy terms with counts and links.', 'wp-webmcp-layer'),
+            'key'              => 'site_get_categories',
+            'name'             => 'site_get_categories',
+            'title'            => __('List taxonomy terms', 'webmcp-layer-for-wordpress'),
+            'description'      => __('Lists public WordPress taxonomy terms with counts and links.', 'webmcp-layer-for-wordpress'),
             'inputSchema'      => [
                 'type'                 => 'object',
                 'properties'           => [
@@ -67,11 +67,11 @@ final class Core {
             ],
             'outputSchema'    => ['type' => 'object'],
             'annotations'     => ['readOnlyHint' => true, 'untrustedContentHint' => true],
-            'option'          => 'tool_wp_get_categories',
+            'option'          => 'tool_site_get_categories',
             'default_enabled' => true,
             'method'          => 'GET',
             'path'            => '/categories',
-            'ability_name'    => 'webmcp/wp-get-categories',
+            'ability_name'    => 'webmcp/site-get-categories',
             'execute_callback' => static function (array $input) {
                 $request = new WP_REST_Request('GET', '/webmcp/v1/categories');
                 foreach (['taxonomy', 'hide_empty', 'page', 'per_page'] as $param) {
@@ -82,18 +82,18 @@ final class Core {
         ]);
 
         $registry->register([
-            'key'              => 'wp_get_site_info',
-            'name'             => 'wp_get_site_info',
-            'title'            => __('Get site information', 'wp-webmcp-layer'),
-            'description'      => __('Returns public site identity and locale metadata without administrative contact data.', 'wp-webmcp-layer'),
+            'key'              => 'site_get_site_info',
+            'name'             => 'site_get_site_info',
+            'title'            => __('Get site information', 'webmcp-layer-for-wordpress'),
+            'description'      => __('Returns public site identity and locale metadata without administrative contact data.', 'webmcp-layer-for-wordpress'),
             'inputSchema'      => ['type' => 'object', 'properties' => (object) [], 'required' => [], 'additionalProperties' => false],
             'outputSchema'    => ['type' => 'object'],
             'annotations'     => ['readOnlyHint' => true, 'untrustedContentHint' => false],
-            'option'          => 'tool_wp_get_site_info',
+            'option'          => 'tool_site_get_site_info',
             'default_enabled' => true,
             'method'          => 'GET',
             'path'            => '/site-info',
-            'ability_name'    => 'webmcp/wp-get-site-info',
+            'ability_name'    => 'webmcp/site-get-site-info',
             'execute_callback' => static function (array $input) {
                 return self::site_info(new WP_REST_Request('GET', '/webmcp/v1/site-info'))->get_data();
             },
@@ -105,7 +105,7 @@ final class Core {
             'methods'             => 'GET',
             'callback'            => [__CLASS__, 'get_menu'],
             'permission_callback' => static function (WP_REST_Request $request) {
-                return REST::authorize_tool($request, 'wp_get_menu', false);
+                return REST::authorize_tool($request, 'site_get_menu', false);
             },
             'args' => [
                 'location' => [
@@ -131,7 +131,7 @@ final class Core {
             'methods'             => 'GET',
             'callback'            => [__CLASS__, 'get_categories'],
             'permission_callback' => static function (WP_REST_Request $request) {
-                return REST::authorize_tool($request, 'wp_get_categories', false);
+                return REST::authorize_tool($request, 'site_get_categories', false);
             },
             'args' => [
                 'taxonomy' => [
@@ -172,7 +172,7 @@ final class Core {
             'methods'             => 'GET',
             'callback'            => [__CLASS__, 'site_info'],
             'permission_callback' => static function (WP_REST_Request $request) {
-                return REST::authorize_tool($request, 'wp_get_site_info', false);
+                return REST::authorize_tool($request, 'site_get_site_info', false);
             },
         ]);
     }
@@ -180,24 +180,62 @@ final class Core {
     public static function get_menu(WP_REST_Request $request): WP_REST_Response {
         $locations = function_exists('get_nav_menu_locations') ? get_nav_menu_locations() : [];
         $location = sanitize_key((string) $request->get_param('location'));
-        $menu_id = absint($request->get_param('menu_id'));
+        $requested_menu_id = absint($request->get_param('menu_id'));
+        $menu_id = 0;
 
-        if (!$menu_id && $location !== '' && !empty($locations[$location])) {
+        if ($location !== '') {
+            if (!array_key_exists($location, $locations)) {
+                return new WP_REST_Response(['error' => 'Navigation menu location not found'], 404);
+            }
+
             $menu_id = absint($locations[$location]);
+            if (!$menu_id) {
+                return new WP_REST_Response(['error' => 'No navigation menu is assigned to this location'], 404);
+            }
+            if ($requested_menu_id && $requested_menu_id !== $menu_id) {
+                return new WP_REST_Response(['error' => 'Menu does not match the requested location'], 404);
+            }
+        } elseif ($requested_menu_id) {
+            $menu_id = $requested_menu_id;
         }
-        if (!$menu_id && !empty($locations)) {
-            $menu_id = absint(reset($locations));
-            $location = $location ?: (string) array_key_first($locations);
+
+        if (!$menu_id && $location === '' && !empty($locations)) {
+            foreach ($locations as $registered_location => $registered_menu_id) {
+                if (absint($registered_menu_id)) {
+                    $menu_id = absint($registered_menu_id);
+                    $location = (string) $registered_location;
+                    break;
+                }
+            }
         }
 
         if (!$menu_id || !function_exists('wp_get_nav_menu_items')) {
             return new WP_REST_Response(['error' => 'No public navigation menu is configured'], 404);
         }
 
+        $assigned_locations = [];
+        foreach ($locations as $registered_location => $registered_menu_id) {
+            if (absint($registered_menu_id) === $menu_id) {
+                $assigned_locations[] = (string) $registered_location;
+            }
+        }
+
+        if (!$assigned_locations && !current_user_can('edit_theme_options')) {
+            return new WP_REST_Response(['error' => 'This navigation menu is not publicly assigned'], 403);
+        }
+
+        if ($location === '' && $assigned_locations) {
+            $location = $assigned_locations[0];
+        }
+
         $menu = wp_get_nav_menu_object($menu_id);
         if (!$menu) return new WP_REST_Response(['error' => 'Navigation menu not found'], 404);
 
-        $items = wp_get_nav_menu_items($menu_id, ['update_post_term_cache' => false]);
+        $items = wp_get_nav_menu_items($menu_id, [
+            'nopaging'               => false,
+            'posts_per_page'         => 100,
+            'update_post_term_cache' => false,
+        ]);
         $output = [];
         foreach (is_array($items) ? array_slice($items, 0, 100) : [] as $item) {
             if (!is_object($item)) continue;

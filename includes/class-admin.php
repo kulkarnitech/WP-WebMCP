@@ -1,12 +1,13 @@
 <?php
-namespace WP_WebMCP_Layer;
+namespace WebMCP_Layer;
 
 if (!defined('ABSPATH')) exit;
 
 final class Admin {
 
-    public const OPTION_KEY = 'wp_webmcp_layer_options';
-    public const PAGE_SLUG  = 'wp-webmcp-layer';
+    public const OPTION_KEY = 'webmcp_layer_options';
+    // Stable slug for the WebMCP Layer for WordPress settings page.
+    public const PAGE_SLUG  = 'webmcp-layer-for-wordpress';
 
     /**
      * Capabilities list for dropdowns (practical subset).
@@ -22,6 +23,25 @@ final class Admin {
             'manage_options'     => 'manage_options (Admins)',
             'manage_woocommerce' => 'manage_woocommerce (Woo Managers/Admins)',
         ];
+    }
+
+    /**
+     * Initialize and sanitize settings during plugin activation.
+     * Existing values are preserved while missing/default values are filled.
+     */
+    public static function activate(): void {
+        $existing = get_option(self::OPTION_KEY, null);
+        if ($existing === null) {
+            add_option(self::OPTION_KEY, self::sanitize([]));
+            return;
+        }
+
+        self::maybe_migrate_options();
+
+        $existing = get_option(self::OPTION_KEY, []);
+        $input = is_array($existing) ? $existing : [];
+        $options = self::sanitize($input);
+        update_option(self::OPTION_KEY, $options);
     }
 
     public static function init(): void {
@@ -49,8 +69,8 @@ final class Admin {
 
     public static function menu(): void {
         add_options_page(
-            'WP WebMCP Layer',
-            'WP WebMCP Layer',
+            'WebMCP Layer for WordPress',
+            'WebMCP Layer for WordPress',
             'manage_options',
             self::PAGE_SLUG,
             [__CLASS__, 'render']
@@ -68,14 +88,14 @@ final class Admin {
                 '_schema_version'     => 2,
 
                 // Tool toggles
-                'tool_wp_search'       => 1,
-                'tool_wp_get_post'     => 1,
+                'tool_site_search'       => 1,
+                'tool_site_get_post'     => 1,
                 'tool_woo_cart_view'   => 1,
                 'tool_woo_cart_add'    => 1,
                 'tool_bp_members'      => 1,
-                'tool_wp_get_menu'     => 1,
-                'tool_wp_get_categories' => 1,
-                'tool_wp_get_site_info' => 1,
+                'tool_site_get_menu'     => 1,
+                'tool_site_get_categories' => 1,
+                'tool_site_get_site_info' => 1,
                 'tool_woo_product_search' => 1,
                 'tool_woo_product_get' => 1,
                 'tool_woo_product_categories' => 1,
@@ -88,8 +108,8 @@ final class Admin {
                 'tool_bp_activity_create' => 0,
 
                 // Role/cap gates for tool *exposure* (frontend) + intended REST enforcement
-                'cap_wp_search'        => '',
-                'cap_wp_get_post'      => '',
+                'cap_site_search'        => '',
+                'cap_site_get_post'      => '',
                 'cap_woo_cart_view'    => 'read',
                 'cap_woo_cart_add'     => 'read',
                 'cap_woo_cart_remove'  => 'read',
@@ -116,7 +136,7 @@ final class Admin {
         // Main settings
         // =======================
         add_settings_section(
-            'wp_webmcp_main',
+            'webmcp_layer_main',
             'Main Settings',
             function () {
                 echo '<p>Controls what your site exposes via WebMCP. WooCommerce and PMPro features only activate if those plugins are active.</p>';
@@ -130,7 +150,7 @@ final class Admin {
         // Tool toggles
         // =======================
         add_settings_section(
-            'wp_webmcp_tools',
+            'webmcp_layer_tools',
             'Tools',
             function () {
                 echo '<p>Enable/disable individual tools.</p>';
@@ -138,20 +158,20 @@ final class Admin {
             self::PAGE_SLUG
         );
 
-        self::add_checkbox('tool_wp_search', 'Tool: wp_search', 'Expose search tool.', 'wp_webmcp_tools');
-        self::add_checkbox('tool_wp_get_post', 'Tool: wp_get_post', 'Expose post retrieval tool (PMPro paywall redaction applies if active).', 'wp_webmcp_tools');
-        self::add_checkbox('tool_woo_cart_view', 'Tool: woo_cart_view', 'Expose Woo cart view tool (requires WooCommerce).', 'wp_webmcp_tools');
-        self::add_checkbox('tool_woo_cart_add', 'Tool: woo_cart_add', 'Expose Woo add-to-cart tool (requires WooCommerce; should be user-confirmed).', 'wp_webmcp_tools');
-        self::add_checkbox('tool_bp_members', 'Tool: bp_members', 'Expose BuddyPress/BuddyBoss member search (requires the community plugin).', 'wp_webmcp_tools');
-        foreach (['wp_get_menu', 'wp_get_categories', 'wp_get_site_info', 'woo_product_search', 'woo_product_get', 'woo_product_categories', 'woo_checkout_fields', 'woo_cart_remove', 'woo_coupon_apply', 'pmpro_memberships', 'bp_groups', 'bp_activity', 'bp_activity_create'] as $tool) {
-            self::add_checkbox('tool_' . $tool, 'Tool: ' . $tool, 'Expose this tool when its integration is available.', 'wp_webmcp_tools');
+        self::add_checkbox('tool_site_search', 'Tool: site_search', 'Expose search tool.', 'webmcp_layer_tools');
+        self::add_checkbox('tool_site_get_post', 'Tool: site_get_post', 'Expose post retrieval tool (PMPro paywall redaction applies if active).', 'webmcp_layer_tools');
+        self::add_checkbox('tool_woo_cart_view', 'Tool: woo_cart_view', 'Expose Woo cart view tool (requires WooCommerce).', 'webmcp_layer_tools');
+        self::add_checkbox('tool_woo_cart_add', 'Tool: woo_cart_add', 'Expose Woo add-to-cart tool (requires WooCommerce; should be user-confirmed).', 'webmcp_layer_tools');
+        self::add_checkbox('tool_bp_members', 'Tool: bp_members', 'Expose BuddyPress/BuddyBoss member search (requires the community plugin).', 'webmcp_layer_tools');
+        foreach (['site_get_menu', 'site_get_categories', 'site_get_site_info', 'woo_product_search', 'woo_product_get', 'woo_product_categories', 'woo_checkout_fields', 'woo_cart_remove', 'woo_coupon_apply', 'pmpro_memberships', 'bp_groups', 'bp_activity', 'bp_activity_create'] as $tool) {
+            self::add_checkbox('tool_' . $tool, 'Tool: ' . $tool, 'Expose this tool when its integration is available.', 'webmcp_layer_tools');
         }
 
         // =======================
         // Role / capability gates
         // =======================
         add_settings_section(
-            'wp_webmcp_access',
+            'webmcp_layer_access',
             'Role-based Exposure',
             function () {
                 echo '<p>These gates control whether tools are exposed to the current visitor. Use this to restrict tools to logged-in users or admins only.</p>';
@@ -160,8 +180,8 @@ final class Admin {
             self::PAGE_SLUG
         );
 
-        self::add_capability_select('cap_wp_search', 'Capability required: wp_search', 'Who can see/use wp_search tool.');
-        self::add_capability_select('cap_wp_get_post', 'Capability required: wp_get_post', 'Who can see/use wp_get_post tool.');
+        self::add_capability_select('cap_site_search', 'Capability required: site_search', 'Who can see/use site_search tool.');
+        self::add_capability_select('cap_site_get_post', 'Capability required: site_get_post', 'Who can see/use site_get_post tool.');
         self::add_capability_select('cap_woo_cart_view', 'Capability required: woo_cart_view', 'Who can see/use cart viewing tool.');
         self::add_capability_select('cap_woo_cart_add', 'Capability required: woo_cart_add', 'Who can see/use add-to-cart tool.');
         self::add_capability_select('cap_woo_cart_remove', 'Capability required: woo_cart_remove', 'Who can see/use cart removal tool.');
@@ -175,7 +195,7 @@ final class Admin {
         // Rate limiting settings
         // =======================
         add_settings_section(
-            'wp_webmcp_ratelimit',
+            'webmcp_layer_ratelimit',
             'REST Rate Limiting',
             function () {
                 echo '<p>Rate limiting for WebMCP REST and native Ability execution, scoped by principal and tool. Helps prevent abuse.</p>';
@@ -187,7 +207,7 @@ final class Admin {
         self::add_checkbox('rate_limit_enabled', 'Enable rate limiting', 'Apply rate limiting to WebMCP REST endpoints.');
         self::add_number('rate_limit_window', 'Window (seconds)', 'Time window for counting requests (e.g., 60).', 10, 86400);
         self::add_number('rate_limit_max', 'Max requests per window', 'Max requests per principal and tool per window (e.g., 60).', 1, 100000);
-        self::add_checkbox('rate_limit_global_enabled', 'Enable pooled rate limiting', 'Apply an authenticated/anonymous pool ceiling in addition to the per-principal limit.', 'wp_webmcp_ratelimit');
+        self::add_checkbox('rate_limit_global_enabled', 'Enable pooled rate limiting', 'Apply an authenticated/anonymous pool ceiling in addition to the per-principal limit.', 'webmcp_layer_ratelimit');
         self::add_number('rate_limit_global_max', 'Pool max requests per window', 'Maximum WebMCP requests for one caller class in a window.', 1, 100000);
         self::add_number('request_size_limit', 'Maximum request size (bytes)', 'Reject oversized WebMCP inputs before tool execution.', 1024, 1048576);
         self::add_number('schema_max_depth', 'Maximum input nesting depth', 'Bounds nested native-ability input validation.', 2, 16);
@@ -195,7 +215,7 @@ final class Admin {
     }
 
     private static function add_checkbox(string $key, string $label, string $help, string $section = ''): void {
-        $section = $section ?: 'wp_webmcp_main';
+        $section = $section ?: 'webmcp_layer_main';
 
         add_settings_field(
             $key,
@@ -218,17 +238,20 @@ final class Admin {
         add_settings_field(
             $key,
             $label,
-            function () use ($key, $help, $min, $max) {
+            function () use ($key, $label, $help, $min, $max) {
                 $opts = get_option(self::OPTION_KEY, []);
                 $val  = isset($opts[$key]) ? (int) $opts[$key] : 0;
+                $input_id = 'webmcp-layer-' . sanitize_key($key);
+                $help_id = $input_id . '-description';
 
                 echo '<div style="display:flex; flex-direction:column; gap:6px;">';
-                echo '<input type="number" min="' . esc_attr((string)$min) . '" max="' . esc_attr((string)$max) . '" name="' . esc_attr(self::OPTION_KEY) . '[' . esc_attr($key) . ']" value="' . esc_attr((string)$val) . '" style="width:120px;" />';
-                echo '<span style="color:#646970;">' . esc_html($help) . '</span>';
+                echo '<label class="screen-reader-text" for="' . esc_attr($input_id) . '">' . esc_html($label) . '</label>';
+                echo '<input id="' . esc_attr($input_id) . '" type="number" min="' . esc_attr((string)$min) . '" max="' . esc_attr((string)$max) . '" name="' . esc_attr(self::OPTION_KEY) . '[' . esc_attr($key) . ']" value="' . esc_attr((string)$val) . '" aria-describedby="' . esc_attr($help_id) . '" style="width:120px;" />';
+                echo '<span id="' . esc_attr($help_id) . '" style="color:#646970;">' . esc_html($help) . '</span>';
                 echo '</div>';
             },
             self::PAGE_SLUG,
-            'wp_webmcp_ratelimit'
+            'webmcp_layer_ratelimit'
         );
     }
 
@@ -251,7 +274,7 @@ final class Admin {
                 echo '</div>';
             },
             self::PAGE_SLUG,
-            'wp_webmcp_access'
+            'webmcp_layer_access'
         );
     }
 
@@ -268,12 +291,12 @@ final class Admin {
         // Master + toggles
         $out['enabled']            = !empty($value('enabled', 1)) ? 1 : 0;
 
-        $out['tool_wp_search']     = !empty($value('tool_wp_search', 1)) ? 1 : 0;
-        $out['tool_wp_get_post']   = !empty($value('tool_wp_get_post', 1)) ? 1 : 0;
+        $out['tool_site_search']     = !empty($value('tool_site_search', 1)) ? 1 : 0;
+        $out['tool_site_get_post']   = !empty($value('tool_site_get_post', 1)) ? 1 : 0;
         $out['tool_woo_cart_view'] = !empty($value('tool_woo_cart_view', 1)) ? 1 : 0;
         $out['tool_woo_cart_add']  = !empty($value('tool_woo_cart_add', 1)) ? 1 : 0;
         $out['tool_bp_members']    = !empty($value('tool_bp_members', 1)) ? 1 : 0;
-        foreach (['wp_get_menu', 'wp_get_categories', 'wp_get_site_info', 'woo_product_search', 'woo_product_get', 'woo_product_categories', 'woo_checkout_fields', 'woo_cart_remove', 'woo_coupon_apply', 'pmpro_memberships', 'bp_groups', 'bp_activity', 'bp_activity_create'] as $tool) {
+        foreach (['site_get_menu', 'site_get_categories', 'site_get_site_info', 'woo_product_search', 'woo_product_get', 'woo_product_categories', 'woo_checkout_fields', 'woo_cart_remove', 'woo_coupon_apply', 'pmpro_memberships', 'bp_groups', 'bp_activity', 'bp_activity_create'] as $tool) {
             $default = $tool === 'bp_activity_create' ? 0 : 1;
             $out['tool_' . $tool] = !empty($value('tool_' . $tool, $default)) ? 1 : 0;
         }
@@ -281,8 +304,8 @@ final class Admin {
         // Capability gates (must be from whitelist)
         $choices = self::capability_choices();
         $capDefaults = [
-            'cap_wp_search' => '',
-            'cap_wp_get_post' => '',
+            'cap_site_search' => '',
+            'cap_site_get_post' => '',
             'cap_woo_cart_view' => 'read',
             'cap_woo_cart_add' => 'read',
             'cap_woo_cart_remove' => 'read',
@@ -317,13 +340,13 @@ final class Admin {
         if ($hook !== 'settings_page_' . self::PAGE_SLUG) return;
 
         wp_enqueue_script(
-            'wp-webmcp-admin',
-            WP_WEBMCP_LAYER_URL . 'assets/admin.js',
+            'webmcp-layer-admin',
+            WEBMCP_LAYER_URL . 'assets/admin.js',
             [],
-            WP_WEBMCP_LAYER_VERSION,
+            WEBMCP_LAYER_VERSION,
             true
         );
-        wp_localize_script('wp-webmcp-admin', 'WP_WEBMCP_ADMIN', [
+        wp_localize_script('webmcp-layer-admin', 'WEBMCP_LAYER_ADMIN', [
             'restBase' => esc_url_raw(rest_url('webmcp/v1')),
             'nonce' => wp_create_nonce('wp_rest'),
             'manifestUrl' => esc_url_raw(rest_url('webmcp/v1/manifest')),
@@ -359,7 +382,7 @@ final class Admin {
         // Debug info payload (server-side)
         $debug = [
             'plugin' => [
-                'version' => defined('WP_WEBMCP_LAYER_VERSION') ? WP_WEBMCP_LAYER_VERSION : null,
+                'version' => defined('WEBMCP_LAYER_VERSION') ? WEBMCP_LAYER_VERSION : null,
                 'option_key' => self::OPTION_KEY,
             ],
             'integrations' => [
@@ -374,7 +397,7 @@ final class Admin {
         ];
 
         echo '<div class="wrap">';
-        echo '<h1>WP WebMCP Layer</h1>';
+        echo '<h1>WebMCP Layer for WordPress</h1>';
 
         // =======================
         // Integration status
@@ -394,9 +417,9 @@ final class Admin {
         echo '<div style="padding:12px 14px; background:#fff; border:1px solid #c3c4c7; border-radius:6px; max-width:980px;">';
         echo '<div style="display:flex; gap:10px; align-items:center;">';
         echo '<span style="min-width:220px;"><strong>WebMCP Browser API</strong></span>';
-        echo '<span id="wp-webmcp-browser-support">Checking…</span>';
+        echo '<span id="webmcp-layer-browser-support">Checking…</span>';
         echo '</div>';
-        echo '<div class="wp-webmcp-support-detail" style="margin-top:6px; color:#646970;"></div>';
+        echo '<div class="webmcp-layer-support-detail" style="margin-top:6px; color:#646970;"></div>';
         echo '</div>';
 
         // =======================
@@ -408,13 +431,13 @@ final class Admin {
 
         $rows = [
             [
-                'name' => 'wp_search',
-                'status' => $toolStatus['wp_search'],
+                'name' => 'site_search',
+                'status' => $toolStatus['site_search'],
                 'note' => 'Search posts/pages and products (if Woo active).',
             ],
             [
-                'name' => 'wp_get_post',
-                'status' => $toolStatus['wp_get_post'],
+                'name' => 'site_get_post',
+                'status' => $toolStatus['site_get_post'],
                 'note' => $hasPMPro ? 'PMPro active: paywalled content redacted (title + notice only).' : 'PMPro not active: content treated as public.',
             ],
             [
@@ -485,7 +508,7 @@ final class Admin {
             echo '<details style="background:#fff; border:1px solid #c3c4c7; border-radius:6px; padding:10px 12px; margin:10px 0;">';
             echo '<summary style="cursor:pointer;"><strong><code>' . esc_html($toolKey) . '</code></strong> <code>' . esc_html($method . ' ' . $path) . '</code></summary>';
             echo '<pre style="white-space:pre-wrap;">' . esc_html($curl . "\n\n" . $js) . '</pre>';
-            if ($method === 'GET') echo '<button type="button" class="button button-secondary wp-webmcp-run-example" data-endpoint="' . esc_attr($endpoint) . '">Run read-only example</button><pre class="wp-webmcp-example-output" style="white-space:pre-wrap; max-height:220px; overflow:auto;"></pre>';
+            if ($method === 'GET') echo '<button type="button" class="button button-secondary webmcp-layer-run-example" data-endpoint="' . esc_attr($endpoint) . '">Run read-only example</button><pre class="webmcp-layer-example-output" style="white-space:pre-wrap; max-height:220px; overflow:auto;"></pre>';
             echo '</details>';
         }
         echo '</div>';
@@ -496,17 +519,17 @@ final class Admin {
         echo '<h2>Debug Export</h2>';
         echo '<p>Copy this into a support ticket. Includes settings, integrations, and schema details.</p>';
         echo '<div style="max-width:980px;">';
-        echo '<textarea id="wp-webmcp-debug" rows="10" style="width:100%; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">' .
+        echo '<textarea id="webmcp-layer-debug" rows="10" style="width:100%; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">' .
             esc_textarea(wp_json_encode($debug, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) .
             '</textarea>';
-        echo '<p><button type="button" class="button button-secondary" id="wp-webmcp-copy-debug">Copy debug JSON</button></p>';
+        echo '<p><button type="button" class="button button-secondary" id="webmcp-layer-copy-debug">Copy debug JSON</button></p>';
         echo '</div>';
 
         // Inline JS for copy button (admin-only)
         echo '<script>
         (function(){
-            var btn = document.getElementById("wp-webmcp-copy-debug");
-            var ta  = document.getElementById("wp-webmcp-debug");
+            var btn = document.getElementById("webmcp-layer-copy-debug");
+            var ta  = document.getElementById("webmcp-layer-debug");
             if (!btn || !ta) return;
             btn.addEventListener("click", function(){
                 ta.focus();

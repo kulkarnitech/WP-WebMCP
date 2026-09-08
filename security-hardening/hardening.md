@@ -1,4 +1,4 @@
-# Security Hardening Review: WP WebMCP
+# Security Hardening Review: WebMCP Layer for WordPress
 
 ## Evidence Basis
 
@@ -13,7 +13,7 @@ We assume an incremental WordPress plugin release, backwards-compatible REST too
 | Opportunity | Evidence | Options | Recommendation | Proposal |
 | --- | --- | --- | --- | --- |
 | One policy boundary for REST and native execution | Native Abilities control bypass, pre-auth global limiter, non-atomic idempotency | Local guards; unified execution policy | Unified policy boundary, delivered incrementally | [Execution policy proposal](proposals/execution-policy-gateway.md) |
-| Domain-owned authorization before content and community sinks | `wp_get_post` visibility bypass; BuddyPress activity authorization bypass | Adapter-local checks; domain policy services | Domain policy services after tactical guards | [Domain authorization proposal](proposals/domain-aware-authorization.md) |
+| Domain-owned authorization before content and community sinks | `site_get_post` visibility bypass; BuddyPress activity authorization bypass | Adapter-local checks; domain policy services | Domain policy services after tactical guards | [Domain authorization proposal](proposals/domain-aware-authorization.md) |
 
 ## Recommendation Summary
 
@@ -26,4 +26,3 @@ The attractive part of the plan is that we can ship the tactical guards first an
 1. Confirm whether the production site exposes WordPress 6.9+ native Abilities and whether anonymous WooCommerce cart mutations are intentional.
 2. Approve the unified execution policy as the target design, with local guards as the first release gate.
 3. Provide a configured WordPress test site with WooCommerce, PMPro, and BuddyPress/BuddyBoss for the runtime validation plan.
-

@@ -1,5 +1,5 @@
 <?php
-namespace WP_WebMCP_Layer;
+namespace WebMCP_Layer;
 
 use WP_REST_Request;
 use WP_REST_Response;
@@ -19,7 +19,7 @@ final class REST {
                 'methods'  => 'GET',
                 'callback' => [__CLASS__, 'get_post'],
                 'permission_callback' => function (WP_REST_Request $req) {
-                    return self::permission_for_tool($req, 'wp_get_post', false);
+                    return self::permission_for_tool($req, 'site_get_post', false);
                 },
                 'args' => [
                     'id' => [
@@ -36,7 +36,7 @@ final class REST {
                 'methods'  => 'GET',
                 'callback' => [__CLASS__, 'search'],
                 'permission_callback' => function (WP_REST_Request $req) {
-                    return self::permission_for_tool($req, 'wp_search', false);
+                    return self::permission_for_tool($req, 'site_search', false);
                 },
                 'args' => [
                     'q' => [
@@ -220,7 +220,7 @@ final class REST {
      * duration without receiving content, credentials, or request bodies.
      */
     public static function audit(string $tool, string $result, $duration_ms): void {
-        do_action('wp_webmcp_tool_event', [
+        do_action('webmcp_layer_tool_event', [
             'tool'        => sanitize_key($tool),
             'result'      => sanitize_key($result),
             'duration_ms' => round((float) $duration_ms, 2),
@@ -357,7 +357,7 @@ final class REST {
     }
 
     private static function increment_counter(string $key, int $expiration): int {
-        $group = 'wp-webmcp';
+        $group = 'webmcp-layer';
 
         // External object caches generally provide atomic increment semantics.
         if (function_exists('wp_using_ext_object_cache') && wp_using_ext_object_cache()) {
@@ -441,9 +441,9 @@ final class REST {
 
     private static function client_ip(): string {
         // Keep it conservative; do not trust X-Forwarded-For unless you control proxy.
-        $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
-        $ip = is_string($ip) ? $ip : '0.0.0.0';
-        $ip = trim(wp_unslash($ip));
+        $ip = isset($_SERVER['REMOTE_ADDR']) && is_string($_SERVER['REMOTE_ADDR'])
+            ? trim(sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])))
+            : '0.0.0.0';
 
         // Normalize
         if (!filter_var($ip, FILTER_VALIDATE_IP)) {
@@ -501,13 +501,44 @@ final class REST {
         $q    = mb_substr(sanitize_text_field((string) $req->get_param('q')), 0, 200);
         $type = sanitize_key((string) ($req->get_param('type') ?: 'post'));
 
+        if ($type === 'product' && class_exists('WooCommerce') && function_exists('wc_get_products')) {
+            $products = wc_get_products([
+                'status'     => 'publish',
+                'visibility' => 'visible',
+                'limit'      => 10,
+                'paginate'   => false,
+                'search'     => $q,
+            ]);
+            $results = [];
+
+            foreach (is_array($products) ? $products : [] as $product) {
+                if (!$product instanceof \WC_Product || !$product->is_visible()) continue;
+
+                $access = true;
+                if (function_exists('pmpro_has_membership_access')) {
+                    $access = (bool) pmpro_has_membership_access($product->get_id(), get_current_user_id(), true);
+                }
+
+                $results[] = [
+                    'id'        => $product->get_id(),
+                    'type'      => 'product',
+                    'title'     => mb_substr(sanitize_text_field((string) $product->get_name()), 0, 300),
+                    'url'       => get_permalink($product->get_id()),
+                    'paywalled' => !$access,
+                ];
+            }
+
+            return new WP_REST_Response(['results' => $results], 200);
+        }
+
         $args = [
             's'              => $q,
             'post_status'    => 'publish',
             'posts_per_page' => 10,
+            'no_found_rows'  => true,
         ];
 
-        if ($type === 'product' && class_exists('WooCommerce')) {
+        if ($type === 'product') {
             $args['post_type'] = 'product';
         } elseif ($type === 'page') {
             $args['post_type'] = 'page';

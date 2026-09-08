@@ -1,5 +1,5 @@
 <?php
-namespace WP_WebMCP_Layer;
+namespace WebMCP_Layer;
 
 use WP_REST_Request;
 use WP_REST_Response;
@@ -10,15 +10,15 @@ if (!defined('ABSPATH')) exit;
 final class WooCommerce {
 
     public static function init(): void {
-        add_action('wp_webmcp_register_tools', [__CLASS__, 'register_tools'], 30);
+        add_action('webmcp_layer_register_tools', [__CLASS__, 'register_tools'], 30);
         add_action('rest_api_init', [__CLASS__, 'register_routes']);
     }
 
     public static function register_tools(Tools $registry): void {
         $registry->register([
             'key' => 'woo_product_search', 'name' => 'woo_product_search',
-            'title' => __('Search WooCommerce products', 'wp-webmcp-layer'),
-            'description' => __('Searches purchasable public WooCommerce products by text, category, and price range.', 'wp-webmcp-layer'),
+            'title' => __('Search WooCommerce products', 'webmcp-layer-for-wordpress'),
+            'description' => __('Searches purchasable public WooCommerce products by text, category, and price range.', 'webmcp-layer-for-wordpress'),
             'inputSchema' => [
                 'type' => 'object',
                 'properties' => [
@@ -41,8 +41,8 @@ final class WooCommerce {
 
         $registry->register([
             'key' => 'woo_product_get', 'name' => 'woo_product_get',
-            'title' => __('Get a WooCommerce product', 'wp-webmcp-layer'),
-            'description' => __('Returns public WooCommerce product details, pricing, stock status, attributes, and categories.', 'wp-webmcp-layer'),
+            'title' => __('Get a WooCommerce product', 'webmcp-layer-for-wordpress'),
+            'description' => __('Returns public WooCommerce product details, pricing, stock status, attributes, and categories.', 'webmcp-layer-for-wordpress'),
             'inputSchema' => ['type' => 'object', 'properties' => ['product_id' => ['type' => 'integer', 'minimum' => 1]], 'required' => ['product_id'], 'additionalProperties' => false],
             'outputSchema' => ['type' => 'object'],
             'annotations' => ['readOnlyHint' => true, 'untrustedContentHint' => true],
@@ -54,8 +54,8 @@ final class WooCommerce {
 
         $registry->register([
             'key' => 'woo_product_categories', 'name' => 'woo_product_categories',
-            'title' => __('List WooCommerce product categories', 'wp-webmcp-layer'),
-            'description' => __('Lists public WooCommerce product categories.', 'wp-webmcp-layer'),
+            'title' => __('List WooCommerce product categories', 'webmcp-layer-for-wordpress'),
+            'description' => __('Lists public WooCommerce product categories.', 'webmcp-layer-for-wordpress'),
             'inputSchema' => ['type' => 'object', 'properties' => ['page' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100], 'per_page' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100]], 'additionalProperties' => false],
             'outputSchema' => ['type' => 'object'],
             'annotations' => ['readOnlyHint' => true, 'untrustedContentHint' => true],
@@ -67,8 +67,8 @@ final class WooCommerce {
 
         $registry->register([
             'key' => 'woo_checkout_fields', 'name' => 'woo_checkout_fields',
-            'title' => __('Get checkout field schema', 'wp-webmcp-layer'),
-            'description' => __('Returns the public WooCommerce checkout field schema without customer values.', 'wp-webmcp-layer'),
+            'title' => __('Get checkout field schema', 'webmcp-layer-for-wordpress'),
+            'description' => __('Returns the public WooCommerce checkout field schema without customer values.', 'webmcp-layer-for-wordpress'),
             'inputSchema' => ['type' => 'object', 'properties' => (object) [], 'required' => [], 'additionalProperties' => false],
             'outputSchema' => ['type' => 'object'],
             'annotations' => ['readOnlyHint' => true, 'untrustedContentHint' => false],
@@ -80,8 +80,8 @@ final class WooCommerce {
 
         $registry->register([
             'key' => 'woo_cart_remove', 'name' => 'woo_cart_remove',
-            'title' => __('Remove an item from the cart', 'wp-webmcp-layer'),
-            'description' => __('Removes one identified item from the current WooCommerce cart after confirmation.', 'wp-webmcp-layer'),
+            'title' => __('Remove an item from the cart', 'webmcp-layer-for-wordpress'),
+            'description' => __('Removes one identified item from the current WooCommerce cart after confirmation.', 'webmcp-layer-for-wordpress'),
             'inputSchema' => ['type' => 'object', 'properties' => ['cart_item_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 64], 'idempotency_key' => ['type' => 'string', 'maxLength' => 128]], 'required' => ['cart_item_key'], 'additionalProperties' => false],
             'outputSchema' => ['type' => 'object'],
             'annotations' => ['readOnlyHint' => false, 'untrustedContentHint' => false],
@@ -94,8 +94,8 @@ final class WooCommerce {
 
         $registry->register([
             'key' => 'woo_coupon_apply', 'name' => 'woo_coupon_apply',
-            'title' => __('Apply a WooCommerce coupon', 'wp-webmcp-layer'),
-            'description' => __('Applies a customer-supplied WooCommerce coupon after confirmation.', 'wp-webmcp-layer'),
+            'title' => __('Apply a WooCommerce coupon', 'webmcp-layer-for-wordpress'),
+            'description' => __('Applies a customer-supplied WooCommerce coupon after confirmation.', 'webmcp-layer-for-wordpress'),
             'inputSchema' => ['type' => 'object', 'properties' => ['coupon' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 100], 'idempotency_key' => ['type' => 'string', 'maxLength' => 128]], 'required' => ['coupon'], 'additionalProperties' => false],
             'outputSchema' => ['type' => 'object'],
             'annotations' => ['readOnlyHint' => false, 'untrustedContentHint' => false],

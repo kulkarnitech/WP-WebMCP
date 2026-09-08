@@ -1,7 +1,7 @@
 🚀 Check WebMCP support online:
 https://webmcpchecker.com
 
-# WP WebMCP Layer
+# WebMCP Layer for WordPress
 
 Adds a WebMCP tool layer to WordPress with:
 
@@ -16,6 +16,13 @@ Adds a WebMCP tool layer to WordPress with:
 -   Browser WebMCP capability detection
 -   Debug export panel
 -   Extensible tool registry for integrations such as BuddyPress/BuddyBoss
+
+Content search returns published WordPress posts/pages and, when WooCommerce is
+active, only publicly visible products. Generic searches avoid the unused total
+row count query. Menu discovery uses registered public menu locations by
+default; direct menu IDs require the `edit_theme_options` capability unless the
+menu is assigned to a registered location. Menu responses are capped at 100
+items.
 
 ------------------------------------------------------------------------
 
@@ -34,7 +41,7 @@ compatibility and server-side enforcement layer for older WordPress versions.
 
 ## Current implementation status
 
-**Version 0.3.0 — Phases 1–4 implementation complete.**
+**Version 0.4.0 — Phases 1–4 implementation complete.**
 
 -   Current WebMCP browser registration with a legacy preview fallback
 -   Central registry shared by browser tools, admin previews, REST checks, and
@@ -48,10 +55,15 @@ compatibility and server-side enforcement layer for older WordPress versions.
 -   Confirmation-gated cart/community mutations with idempotency replay defense
 -   Global/per-IP rate limits, request-size and schema-depth bounds, and audit hooks
 -   Admin API examples, deployment guidance, and a WordPress PHPUnit harness
+-   Renamed branding, namespaces, identifiers, and documentation: WebMCP Layer for WordPress
 
 The blue token connector used by [webmcp.dev](https://webmcp.dev/) is
 intentionally deferred to the final optional phase. It is not enabled or
 required by this release.
+
+The display name is **WebMCP Layer for WordPress**. Version 0.4.0 is a clean
+pre-release rename: plugin-specific namespaces, options, hooks, script handles,
+and tool identifiers use the `webmcp`/`site` prefixes consistently.
 
 ## Reference alignment
 
@@ -67,9 +79,9 @@ for the alignment audit and the deferred connector phase.
 
 ## Architecture
 
-    wp-webmcp-layer/
+    webmcp-layer-for-wordpress/
     │
-    ├── wp-webmcp-layer.php
+    ├── webmcp-layer-for-wordpress.php
     ├── includes/
     │   ├── class-plugin.php
     │   ├── class-core.php
@@ -92,11 +104,11 @@ for the alignment audit and the deferred connector phase.
 
 ### Content
 
--   wp_search
--   wp_get_post (PMPro-safe)
--   wp_get_menu
--   wp_get_categories
--   wp_get_site_info
+-   site_search
+-   site_get_post (PMPro-safe)
+-   site_get_menu
+-   site_get_categories
+-   site_get_site_info
 
 ### WooCommerce (optional)
 
@@ -122,7 +134,7 @@ for the alignment audit and the deferred connector phase.
 
 Mutating tools are browser-only by default so a site can require a human
 confirmation before changing state. Integrations can opt into native mutation
-abilities with the `wp_webmcp_register_native_mutation` filter only after
+abilities with the `webmcp_layer_register_native_mutation` filter only after
 adding an equivalent authorization/confirmation policy.
 
 ------------------------------------------------------------------------
@@ -158,6 +170,8 @@ GET /nonce
 -   Idempotency keys for state-changing tools
 -   Request-size and schema-depth bounds
 -   Discovery responses are private/no-store and vary by cookie
+-   Discovery `Link` headers and HTML head links are emitted only when the layer
+    is enabled and the request is a normal frontend page
 
 See [`docs/deployment.md`](docs/deployment.md) for HTTPS, caching, Permissions
 Policy, and proxy guidance.
@@ -169,7 +183,7 @@ Policy, and proxy guidance.
 Integration plugins can register read-only tools without editing this plugin:
 
 ```php
-add_action('wp_webmcp_register_tools', function ($registry) {
+add_action('webmcp_layer_register_tools', function ($registry) {
     $registry->register([
         'key' => 'bp_members',
         'name' => 'bp_members',

@@ -1,5 +1,5 @@
 <?php
-namespace WP_WebMCP_Layer;
+namespace WebMCP_Layer;
 
 use WP_REST_Request;
 use WP_REST_Response;
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) exit;
 final class PMPro {
 
     public static function init(): void {
-        add_action('wp_webmcp_register_tools', [__CLASS__, 'register_tools'], 40);
+        add_action('webmcp_layer_register_tools', [__CLASS__, 'register_tools'], 40);
         add_action('rest_api_init', [__CLASS__, 'register_routes']);
     }
 
@@ -18,8 +18,8 @@ final class PMPro {
         $registry->register([
             'key' => 'pmpro_memberships',
             'name' => 'pmpro_memberships',
-            'title' => __('Get my memberships', 'wp-webmcp-layer'),
-            'description' => __('Returns the signed-in visitor’s active and historical Paid Memberships Pro levels without exposing another user’s profile.', 'wp-webmcp-layer'),
+            'title' => __('Get my memberships', 'webmcp-layer-for-wordpress'),
+            'description' => __('Returns the signed-in visitor’s active and historical Paid Memberships Pro levels without exposing another user’s profile.', 'webmcp-layer-for-wordpress'),
             'inputSchema' => ['type' => 'object', 'properties' => (object) [], 'required' => [], 'additionalProperties' => false],
             'outputSchema' => ['type' => 'object'],
             'annotations' => ['readOnlyHint' => true, 'untrustedContentHint' => false],

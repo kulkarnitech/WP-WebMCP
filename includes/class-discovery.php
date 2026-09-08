@@ -1,5 +1,5 @@
 <?php
-namespace WP_WebMCP_Layer;
+namespace WebMCP_Layer;
 
 use WP_REST_Request;
 use WP_REST_Response;
@@ -63,7 +63,7 @@ final class Discovery {
 
         $response = new WP_REST_Response([
             'schema_version' => '1.0',
-            'plugin_version' => defined('WP_WEBMCP_LAYER_VERSION') ? WP_WEBMCP_LAYER_VERSION : '',
+            'plugin_version' => defined('WEBMCP_LAYER_VERSION') ? WEBMCP_LAYER_VERSION : '',
             'site_url'       => esc_url_raw(home_url('/')),
             'enabled'        => $enabled,
             'browser_api'    => 'document.modelContext.registerTool',
@@ -116,7 +116,15 @@ final class Discovery {
     }
 
     public static function headers(array $headers): array {
-        if (is_admin()) return $headers;
+        if (
+            is_admin()
+            || !Plugin::opt('enabled', 1)
+            || (defined('REST_REQUEST') && REST_REQUEST)
+            || (function_exists('wp_doing_ajax') && wp_doing_ajax())
+            || (function_exists('is_feed') && is_feed())
+        ) {
+            return $headers;
+        }
 
         $base = rest_url('webmcp/v1');
         $links = [
@@ -134,7 +142,14 @@ final class Discovery {
     }
 
     public static function head_links(): void {
-        if (is_admin()) return;
+        if (
+            is_admin()
+            || !Plugin::opt('enabled', 1)
+            || (defined('REST_REQUEST') && REST_REQUEST)
+            || (function_exists('is_feed') && is_feed())
+        ) {
+            return;
+        }
 
         $base = rest_url('webmcp/v1');
         $links = [
@@ -150,7 +165,10 @@ final class Discovery {
     }
 
     public static function well_known(): void {
-        $request_path = wp_parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+        $request_uri = isset($_SERVER['REQUEST_URI']) && is_string($_SERVER['REQUEST_URI'])
+            ? sanitize_text_field(wp_unslash($_SERVER['REQUEST_URI']))
+            : '';
+        $request_path = wp_parse_url($request_uri, PHP_URL_PATH);
         $path = untrailingslashit((string) $request_path);
         $well_known = static function (string $suffix): string {
             return untrailingslashit((string) wp_parse_url(home_url('/.well-known/' . ltrim($suffix, '/')), PHP_URL_PATH));

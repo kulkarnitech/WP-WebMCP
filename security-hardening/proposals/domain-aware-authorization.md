@@ -14,7 +14,7 @@ I inspected the post retrieval and community route definitions and their sinks.
 
 | Evidence | Finding | What it establishes |
 | --- | --- | --- |
-| `csf_91129cebbfbb83383193d9e0` | `wp_get_post` bypasses WordPress visibility and password protections | `class-rest.php:318-346` returns content after only a `publish` status check. |
+| `csf_91129cebbfbb83383193d9e0` | `site_get_post` bypasses WordPress visibility and password protections | `class-rest.php:318-346` returns content after only a `publish` status check. |
 | `csf_014652bc75c27a165ce450a8` | BuddyPress activity creation bypasses BuddyPress posting authorization | `class-community.php:185-197,278-285` uses the generic gate and calls `bp_activity_add()` directly. |
 
 ## Current Design And Failure Mode
@@ -36,7 +36,7 @@ We will preserve response shapes, tool names, and PMPro paywall behavior. We are
 
 ```mermaid
 flowchart LR
-  U[Caller] --> P[wp_get_post route]
+  U[Caller] --> P[site_get_post route]
   U --> B[community activity route]
   P --> V[post_status + optional PMPro]
   V --> C[post_content response]
@@ -54,9 +54,9 @@ We would add `is_post_publicly_viewable()` and `post_password_required()` checks
 
 ```mermaid
 flowchart LR
-  U[Caller] --> P[wp_get_post route]
+  U[Caller] --> P[site_get_post route]
   U --> B[community activity route]
-  P --> W[WP visibility + password + PMPro]
+  P --> W[WordPress visibility + password + PMPro]
   W --> C[post_content response]
   B --> G[Dedicated capability + nonce]
   G --> D[BP/BuddyBoss posting policy hooks]
@@ -81,7 +81,7 @@ flowchart LR
   U --> B[Community adapter]
   P --> CP[ContentAccessPolicy]
   B --> MP[CommunityMutationPolicy]
-  CP --> W[WP visibility + PMPro]
+  CP --> W[WordPress visibility + PMPro]
   MP --> D[BP/BuddyBoss controller or policy hooks]
   W --> C[post_content response]
   D --> A[bp_activity_add or official service]
@@ -143,6 +143,5 @@ First add the direct content guards and dedicated community capability. Then int
 ## Open Questions
 
 - Which BuddyPress/BuddyBoss versions and policy hooks are supported targets?
-- Should `wp_get_post` allow any custom post type or only an explicit public allowlist?
+- Should `site_get_post` allow any custom post type or only an explicit public allowlist?
 - What is the desired default capability for community activity publication on existing installations?
-

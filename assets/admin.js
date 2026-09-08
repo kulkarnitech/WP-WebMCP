@@ -21,13 +21,13 @@
     el.style.fontWeight = "600";
     el.style.color = ok ? "#16a34a" : "#dc2626";
     if (detail) {
-      var small = el.parentNode.querySelector(".wp-webmcp-support-detail");
+      var small = el.parentNode.querySelector(".webmcp-layer-support-detail");
       if (small) small.textContent = detail;
     }
   }
 
   document.addEventListener("DOMContentLoaded", function () {
-    var el = document.getElementById("wp-webmcp-browser-support");
+    var el = document.getElementById("webmcp-layer-browser-support");
     if (el) {
       try {
         var ok = supported();
@@ -43,10 +43,10 @@
       }
     }
 
-    var config = window.WP_WEBMCP_ADMIN || {};
-    Array.prototype.forEach.call(document.querySelectorAll(".wp-webmcp-run-example"), function (button) {
+    var config = window.WEBMCP_LAYER_ADMIN || {};
+    Array.prototype.forEach.call(document.querySelectorAll(".webmcp-layer-run-example"), function (button) {
       button.addEventListener("click", function () {
-        var output = button.parentNode.querySelector(".wp-webmcp-example-output");
+        var output = button.parentNode.querySelector(".webmcp-layer-example-output");
         if (output) output.textContent = "Loading…";
         fetch(button.getAttribute("data-endpoint"), {
           method: "GET",

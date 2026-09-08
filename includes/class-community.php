@@ -1,5 +1,5 @@
 <?php
-namespace WP_WebMCP_Layer;
+namespace WebMCP_Layer;
 
 use WP_Error;
 use WP_REST_Request;
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) exit;
 final class Community {
 
     public static function init(): void {
-        add_action('wp_webmcp_register_tools', [__CLASS__, 'register_tools'], 20);
+        add_action('webmcp_layer_register_tools', [__CLASS__, 'register_tools'], 20);
         add_action('rest_api_init', [__CLASS__, 'register_routes']);
     }
 
@@ -35,14 +35,14 @@ final class Community {
         $registry->register([
             'key'              => 'bp_members',
             'name'             => 'bp_members',
-            'title'            => __('Find community members', 'wp-webmcp-layer'),
-            'description'      => __('Returns public or visitor-authorized BuddyPress/BuddyBoss member profiles.', 'wp-webmcp-layer'),
+            'title'            => __('Find community members', 'webmcp-layer-for-wordpress'),
+            'description'      => __('Returns public or visitor-authorized BuddyPress/BuddyBoss member profiles.', 'webmcp-layer-for-wordpress'),
             'inputSchema'      => [
                 'type'       => 'object',
                 'properties' => [
-                    'search'   => ['type' => 'string', 'maxLength' => 100, 'description' => __('Optional member search text.', 'wp-webmcp-layer')],
-                    'page'     => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'description' => __('Page number.', 'wp-webmcp-layer')],
-                    'per_page' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 50, 'description' => __('Results per page.', 'wp-webmcp-layer')],
+                    'search'   => ['type' => 'string', 'maxLength' => 100, 'description' => __('Optional member search text.', 'webmcp-layer-for-wordpress')],
+                    'page'     => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'description' => __('Page number.', 'webmcp-layer-for-wordpress')],
+                    'per_page' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 50, 'description' => __('Results per page.', 'webmcp-layer-for-wordpress')],
                 ],
                 'additionalProperties' => false,
             ],
@@ -71,8 +71,8 @@ final class Community {
 
         $registry->register([
             'key' => 'bp_groups', 'name' => 'bp_groups',
-            'title' => __('Find community groups', 'wp-webmcp-layer'),
-            'description' => __('Returns groups visible to the current BuddyPress/BuddyBoss visitor.', 'wp-webmcp-layer'),
+            'title' => __('Find community groups', 'webmcp-layer-for-wordpress'),
+            'description' => __('Returns groups visible to the current BuddyPress/BuddyBoss visitor.', 'webmcp-layer-for-wordpress'),
             'inputSchema' => ['type' => 'object', 'properties' => [
                 'search' => ['type' => 'string', 'maxLength' => 100],
                 'page' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100],
@@ -93,8 +93,8 @@ final class Community {
 
         $registry->register([
             'key' => 'bp_activity', 'name' => 'bp_activity',
-            'title' => __('Read community activity', 'wp-webmcp-layer'),
-            'description' => __('Returns activity entries visible to the current BuddyPress/BuddyBoss visitor.', 'wp-webmcp-layer'),
+            'title' => __('Read community activity', 'webmcp-layer-for-wordpress'),
+            'description' => __('Returns activity entries visible to the current BuddyPress/BuddyBoss visitor.', 'webmcp-layer-for-wordpress'),
             'inputSchema' => ['type' => 'object', 'properties' => [
                 'page' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100],
                 'per_page' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 50],
@@ -115,8 +115,8 @@ final class Community {
 
         $registry->register([
             'key' => 'bp_activity_create', 'name' => 'bp_activity_create',
-            'title' => __('Publish community activity', 'wp-webmcp-layer'),
-            'description' => __('Publishes a short activity update as the signed-in visitor after confirmation.', 'wp-webmcp-layer'),
+            'title' => __('Publish community activity', 'webmcp-layer-for-wordpress'),
+            'description' => __('Publishes a short activity update as the signed-in visitor after confirmation.', 'webmcp-layer-for-wordpress'),
             'inputSchema' => ['type' => 'object', 'properties' => [
                 'content' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 500],
                 'idempotency_key' => ['type' => 'string', 'maxLength' => 128],

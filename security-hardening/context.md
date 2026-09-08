@@ -6,7 +6,7 @@ This derived analysis is based on the completed Codex Security standard scan `be
 
 | ID | Finding | What it establishes |
 | --- | --- | --- |
-| `csf_91129cebbfbb83383193d9e0` | `wp_get_post` bypasses WordPress visibility and password protections | `includes/class-rest.php:318-346` checks `post_status` and returns content without public-visibility or password checks. |
+| `csf_91129cebbfbb83383193d9e0` | `site_get_post` bypasses WordPress visibility and password protections | `includes/class-rest.php:318-346` checks `post_status` and returns content without public-visibility or password checks. |
 | `csf_efc629ac65c7d03cc8d6a47f` | Native WordPress Abilities bypass WebMCP rate and request-size controls | `includes/class-tools.php:164-215` registers native abilities whose execution path does not enter the REST abuse-control path. |
 | `csf_973adf337076f4752f904952` | Global REST rate limit is remotely exhaustible before authentication | `includes/class-rest.php:201-215,258-269` charges a shared bucket before capability and nonce checks. |
 | `csf_014652bc75c27a165ce450a8` | BuddyPress activity creation bypasses BuddyPress posting authorization | `includes/class-community.php:185-197,278-285` uses the generic WebMCP gate and calls `bp_activity_add()` directly. |
