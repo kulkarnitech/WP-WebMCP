@@ -1,0 +1,4 @@
+/vendor/
+/.test-deps/
+/wp-tests-config.php
+/.phpunit.result.cache

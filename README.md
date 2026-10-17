@@ -7,7 +7,7 @@ Adds a WebMCP tool layer to WordPress with:
 
 -   Content search tools
 -   PMPro-safe post retrieval
--   WooCommerce catalog, checkout metadata, and cart tools
+-   WooCommerce catalog, checkout preview/order handoff, and cart tools
 -   Core menu, taxonomy, and site metadata tools
 -   PMPro membership-status tools
 -   BuddyPress/BuddyBoss members, groups, and activity tools
@@ -41,7 +41,7 @@ compatibility and server-side enforcement layer for older WordPress versions.
 
 ## Current implementation status
 
-**Version 0.4.0 — Phases 1–4 implementation complete.**
+**Version 0.5.0 — WooCommerce checkout handoff added; Phases 1–4 remain implemented.**
 
 -   Current WebMCP browser registration with a legacy preview fallback
 -   Central registry shared by browser tools, admin previews, REST checks, and
@@ -53,6 +53,8 @@ compatibility and server-side enforcement layer for older WordPress versions.
     visitor-filtered API catalogs
 -   Core WordPress, WooCommerce, PMPro, and BuddyPress/BuddyBoss adapters
 -   Confirmation-gated cart/community mutations with idempotency replay defense
+-   Payment-safe WooCommerce checkout preview and pending-order handoff; raw
+    card/payment data is never accepted by the WebMCP layer
 -   Global/per-IP rate limits, request-size and schema-depth bounds, and audit hooks
 -   Admin API examples, deployment guidance, and a WordPress PHPUnit harness
 -   Renamed branding, namespaces, identifiers, and documentation: WebMCP Layer for WordPress
@@ -61,7 +63,7 @@ The blue token connector used by [webmcp.dev](https://webmcp.dev/) is
 intentionally deferred to the final optional phase. It is not enabled or
 required by this release.
 
-The display name is **WebMCP Layer for WordPress**. Version 0.4.0 is a clean
+The display name is **WebMCP Layer for WordPress**. Version 0.5.0 is a clean
 pre-release rename: plugin-specific namespaces, options, hooks, script handles,
 and tool identifiers use the `webmcp`/`site` prefixes consistently.
 
@@ -118,6 +120,8 @@ for the alignment audit and the deferred connector phase.
 -   woo_product_get
 -   woo_product_categories
 -   woo_checkout_fields
+-   woo_checkout_preview
+-   woo_checkout_create (disabled by default; native WooCommerce payment handoff)
 -   woo_cart_remove
 -   woo_coupon_apply
 
@@ -151,6 +155,8 @@ GET /post?id=123\
 GET /search?q=keyword\
 GET /cart/view\
 POST /cart/add\
+POST /checkout/preview\
+POST /checkout/create\
 GET /community/members?search=...&page=1
 GET /manifest
 GET /discovery

@@ -4,7 +4,7 @@ Tags: webmcp, ai, woo, pmpro, rest
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 0.4.0
+Stable tag: 0.5.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -23,7 +23,7 @@ Features:
 
 * Content search tool
 * Post retrieval tool (PMPro-safe)
-* WooCommerce catalog, checkout metadata, and cart tools
+* WooCommerce catalog, checkout preview/order handoff, and cart tools
 * Core menu, taxonomy, and site metadata tools
 * PMPro membership status (current visitor only)
 * BuddyPress/BuddyBoss member, group, and activity tools
@@ -37,6 +37,8 @@ Features:
 * Generic product search follows WooCommerce public catalog visibility rules
 * Menu discovery is limited to assigned public locations unless the caller has
   the edit_theme_options capability, with a 100-item query limit
+* Checkout order creation is disabled by default, never accepts raw card data,
+  and hands payment back to the native WooCommerce order-pay page
 
 == Installation ==
 
@@ -56,6 +58,11 @@ No. WooCommerce tools activate only if WooCommerce is installed.
 No. If active, paywalled content is automatically protected.
 
 == Changelog ==
+
+= 0.5.0 =
+* Add bounded WooCommerce checkout preview and pending-order handoff tools.
+* Keep raw card/payment data outside the WebMCP layer and use native WooCommerce payment UI.
+* Add checkout tool toggles, capability settings, terms validation, and checkout integration tests.
 
 = 0.4.0 =
 * Rename the plugin to WebMCP Layer for WordPress.

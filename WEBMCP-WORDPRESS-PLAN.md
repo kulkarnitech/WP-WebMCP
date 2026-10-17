@@ -55,8 +55,9 @@ implemented in 0.4.0; only the optional blue connector remains deferred.**
 - **Discovery contract:** `/manifest`, `/discovery`, `/nonce`, well-known
   metadata, RFC 8288-style Link headers, and HTML link tags are implemented.
 - **Core and WooCommerce coverage:** menu/taxonomy/site info, product
-  search/detail/categories, checkout fields, cart removal, and coupons use
-  bounded public WordPress/Woo APIs.
+  search/detail/categories, checkout fields, payment-safe checkout preview,
+  pending-order handoff, cart removal, and coupons use bounded public
+  WordPress/Woo APIs.
 - **Auth and abuse hardening:** global and per-IP limits, request-size/schema
   depth limits, idempotency replay defense, sanitized output, and audit hooks
   are implemented.
@@ -75,7 +76,7 @@ and test REST authorization/rate limiting.
 | Integration | First tools | Data boundary | Write tools |
 | --- | --- | --- | --- |
 | Core WordPress | `site_search`, `site_get_post` | Published content; PMPro redaction | None in phase 1 |
-| WooCommerce | `woo_product_search`, `woo_product_get`, `woo_cart_view` | Store API/customer session semantics; no private orders | `woo_cart_add`, then checkout only with confirmation |
+| WooCommerce | `woo_product_search`, `woo_product_get`, `woo_cart_view`, `woo_checkout_fields`, `woo_checkout_preview` | Public catalog plus the current customer session; no private orders or raw payment data | `woo_cart_add`, `woo_cart_remove`, `woo_coupon_apply`, `woo_checkout_create` only with confirmation; final payment stays on native WooCommerce |
 | Paid Memberships Pro | Access-aware variants of core tools; `pmpro_memberships` | Use PMPro access functions and never return protected content | Membership changes require explicit admin/member policy |
 | BuddyPress | `bp_members`, `bp_groups`, `bp_activity` | Public/profile visibility and per-endpoint BP permissions | No writes in phase 1 |
 | BuddyBoss | BuddyBoss-compatible member/group/activity reads | Detect BuddyBoss first, then use its privacy/private-network rules | No writes in phase 1 |
@@ -112,7 +113,10 @@ service layer, not direct SQL, and should return bounded, schema-valid output.
 ### Phase 3 — confirmed mutations (implemented)
 
 - Add cart/checkout and community actions only as separate, single-purpose
-  tools.
+  tools. Checkout preview updates the customer session; checkout creation
+  creates a pending order and returns the native WooCommerce payment URL.
+- Never accept raw card numbers, CVVs, or gateway-specific payment payloads in
+  the WebMCP layer; payment processing remains in the WooCommerce gateway UI.
 - Require browser-side confirmation for each state-changing operation.
 - Add idempotency keys, replay protection, audit events, and explicit
   capability/nonce checks.

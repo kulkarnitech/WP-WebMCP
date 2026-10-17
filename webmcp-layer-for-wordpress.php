@@ -3,7 +3,7 @@
  * Plugin Name: WebMCP Layer for WordPress
  * Plugin URI: https://kulkarnitech.com/
  * Description: Adds a WebMCP layer to WordPress with PMPro-safe content, WooCommerce tools, and optional BuddyPress/BuddyBoss adapters.
- * Version: 0.4.0
+ * Version: 0.5.0
  * Author: Kulkarni Technologies
  * Author URI: https://kulkarnitech.com/
  * Text Domain: webmcp-layer-for-wordpress
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('WEBMCP_LAYER_VERSION', '0.4.0');
+define('WEBMCP_LAYER_VERSION', '0.5.0');
 define('WEBMCP_LAYER_PATH', plugin_dir_path(__FILE__));
 define('WEBMCP_LAYER_URL', plugin_dir_url(__FILE__));
 

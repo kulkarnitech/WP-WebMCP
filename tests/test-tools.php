@@ -18,6 +18,29 @@ if (class_exists('WP_UnitTestCase')) {
             $this->assertFalse(\WebMCP_Layer\Tools::validate_input('woo_cart_add', ['product_id' => 1, 'qty' => 101], $error));
         }
 
+        public function test_checkout_input_rejects_raw_payment_data(): void {
+            if (!class_exists('WooCommerce')) $this->markTestSkipped('WooCommerce is not active in the integration test environment.');
+            $error = '';
+            $this->assertFalse(\WebMCP_Layer\Tools::validate_input('woo_checkout_create', [
+                'payment_method' => 'cod',
+                'payment_data' => ['card_number' => '4111111111111111'],
+            ], $error));
+        }
+
+        public function test_checkout_input_accepts_bounded_address(): void {
+            if (!class_exists('WooCommerce')) $this->markTestSkipped('WooCommerce is not active in the integration test environment.');
+            $error = '';
+            $this->assertTrue(\WebMCP_Layer\Tools::validate_input('woo_checkout_create', [
+                'payment_method' => 'cod',
+                'billing' => [
+                    'first_name' => 'Test',
+                    'last_name' => 'Customer',
+                    'country' => 'US',
+                    'email' => 'test@example.com',
+                ],
+            ], $error), $error);
+        }
+
         public function test_password_protected_published_post_is_not_exposed(): void {
             $post_id = self::factory()->post->create([
                 'post_status'   => 'publish',
@@ -90,7 +113,7 @@ if (class_exists('WP_UnitTestCase')) {
                 $options = get_option(\WebMCP_Layer\Admin::OPTION_KEY, []);
 
                 $this->assertSame(1, $options['enabled']);
-                $this->assertSame(2, $options['_schema_version']);
+                $this->assertSame(3, $options['_schema_version']);
                 $this->assertSame('publish_posts', $options['cap_bp_activity_create']);
             } finally {
                 if ($previous === null) {
@@ -261,6 +284,181 @@ if (class_exists('WP_UnitTestCase')) {
             } finally {
                 wp_delete_post($visible->get_id(), true);
                 wp_delete_post($hidden->get_id(), true);
+            }
+        }
+
+        public function test_cart_add_rejects_quantity_outside_supported_range(): void {
+            if (!class_exists('WooCommerce') || !class_exists('WC_Product_Simple')) {
+                $this->markTestSkipped('WooCommerce is not active in the integration test environment.');
+            }
+
+            $product = new WC_Product_Simple();
+            $product->set_name('WebMCP quantity bounds product');
+            $product->set_status('publish');
+            $product->set_catalog_visibility('visible');
+            $product->set_regular_price('10');
+            $product->save();
+
+            try {
+                wc_load_cart();
+                WC()->cart->empty_cart();
+
+                $request = new WP_REST_Request('POST', '/webmcp/v1/cart/add');
+                $request->set_param('product_id', $product->get_id());
+                $request->set_param('qty', 101);
+
+                $response = \WebMCP_Layer\REST::cart_add($request);
+
+                $this->assertSame(400, $response->get_status());
+                $this->assertSame('webmcp_invalid_quantity', $response->get_data()['code']);
+            } finally {
+                if (function_exists('wc_clear_notices')) {
+                    wc_clear_notices();
+                }
+                WC()->cart->empty_cart();
+                wp_delete_post($product->get_id(), true);
+            }
+        }
+
+        public function test_cart_add_honors_woocommerce_validation_filters(): void {
+            if (!class_exists('WooCommerce') || !class_exists('WC_Product_Simple')) {
+                $this->markTestSkipped('WooCommerce is not active in the integration test environment.');
+            }
+
+            $product = new WC_Product_Simple();
+            $product->set_name('WebMCP validation product');
+            $product->set_status('publish');
+            $product->set_catalog_visibility('visible');
+            $product->set_regular_price('10');
+            $product->save();
+
+            $reject = static function () {
+                return false;
+            };
+            add_filter('woocommerce_add_to_cart_validation', $reject, 10, 5);
+
+            try {
+                wc_load_cart();
+                WC()->cart->empty_cart();
+
+                $request = new WP_REST_Request('POST', '/webmcp/v1/cart/add');
+                $request->set_param('product_id', $product->get_id());
+                $request->set_param('qty', 1);
+
+                $response = \WebMCP_Layer\REST::cart_add($request);
+
+                $this->assertSame(400, $response->get_status());
+                $this->assertSame('webmcp_cart_add_rejected', $response->get_data()['code']);
+                $this->assertSame([], WC()->cart->get_cart());
+            } finally {
+                remove_filter('woocommerce_add_to_cart_validation', $reject, 10);
+                if (function_exists('wc_clear_notices')) {
+                    wc_clear_notices();
+                }
+                WC()->cart->empty_cart();
+                wp_delete_post($product->get_id(), true);
+            }
+        }
+
+        public function test_cart_add_increments_existing_quantity_after_cart_rehydration(): void {
+            if (!class_exists('WooCommerce') || !class_exists('WC_Product_Simple')) {
+                $this->markTestSkipped('WooCommerce is not active in the integration test environment.');
+            }
+
+            $product = new WC_Product_Simple();
+            $product->set_name('WebMCP cart increment product');
+            $product->set_status('publish');
+            $product->set_catalog_visibility('visible');
+            $product->set_regular_price('10');
+            $product->save();
+
+            global $wp_actions;
+            $previous_cart_loads = $wp_actions['woocommerce_load_cart_from_session'] ?? 0;
+
+            try {
+                wc_load_cart();
+                WC()->cart->empty_cart();
+
+                $first = new WP_REST_Request('POST', '/webmcp/v1/cart/add');
+                $first->set_param('product_id', $product->get_id());
+                $first->set_param('qty', 1);
+                $this->assertSame(200, \WebMCP_Layer\REST::cart_add($first)->get_status());
+
+                WC()->cart->calculate_totals();
+                $session_cart = [];
+                foreach (WC()->cart->get_cart() as $key => $values) {
+                    unset($values['data']);
+                    $session_cart[$key] = $values;
+                }
+                WC()->session->set('cart', $session_cart);
+                $wp_actions['woocommerce_load_cart_from_session'] = 0;
+                WC()->cart = new WC_Cart();
+
+                $second = new WP_REST_Request('POST', '/webmcp/v1/cart/add');
+                $second->set_param('product_id', $product->get_id());
+                $second->set_param('qty', 2);
+                $response = \WebMCP_Layer\REST::cart_add($second);
+
+                $this->assertSame(200, $response->get_status());
+                $this->assertSame(2, $response->get_data()['added_qty']);
+                $this->assertSame(3, (int) $response->get_data()['cart']['items'][0]['qty']);
+            } finally {
+                $wp_actions['woocommerce_load_cart_from_session'] = $previous_cart_loads;
+                if (function_exists('wc_clear_notices')) {
+                    wc_clear_notices();
+                }
+                WC()->cart->empty_cart();
+                wp_delete_post($product->get_id(), true);
+            }
+        }
+
+        public function test_cart_add_rejects_sold_individually_duplicate_after_cart_rehydration(): void {
+            if (!class_exists('WooCommerce') || !class_exists('WC_Product_Simple')) {
+                $this->markTestSkipped('WooCommerce is not active in the integration test environment.');
+            }
+
+            $product = new WC_Product_Simple();
+            $product->set_name('WebMCP sold individually product');
+            $product->set_status('publish');
+            $product->set_catalog_visibility('visible');
+            $product->set_regular_price('10');
+            $product->set_sold_individually(true);
+            $product->save();
+
+            global $wp_actions;
+            $previous_cart_loads = $wp_actions['woocommerce_load_cart_from_session'] ?? 0;
+
+            try {
+                wc_load_cart();
+                WC()->cart->empty_cart();
+
+                $first = new WP_REST_Request('POST', '/webmcp/v1/cart/add');
+                $first->set_param('product_id', $product->get_id());
+                $this->assertSame(200, \WebMCP_Layer\REST::cart_add($first)->get_status());
+
+                WC()->cart->calculate_totals();
+                $session_cart = [];
+                foreach (WC()->cart->get_cart() as $key => $values) {
+                    unset($values['data']);
+                    $session_cart[$key] = $values;
+                }
+                WC()->session->set('cart', $session_cart);
+                $wp_actions['woocommerce_load_cart_from_session'] = 0;
+                WC()->cart = new WC_Cart();
+
+                $second = new WP_REST_Request('POST', '/webmcp/v1/cart/add');
+                $second->set_param('product_id', $product->get_id());
+                $response = \WebMCP_Layer\REST::cart_add($second);
+
+                $this->assertSame(400, $response->get_status());
+                $this->assertSame('webmcp_cart_add_failed', $response->get_data()['code']);
+            } finally {
+                $wp_actions['woocommerce_load_cart_from_session'] = $previous_cart_loads;
+                if (function_exists('wc_clear_notices')) {
+                    wc_clear_notices();
+                }
+                WC()->cart->empty_cart();
+                wp_delete_post($product->get_id(), true);
             }
         }
 

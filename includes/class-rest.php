@@ -626,8 +626,28 @@ final class REST {
             wc_load_cart();
         }
 
+        if (!WC()->cart || !method_exists(WC()->cart, 'get_cart')) {
+            return new WP_REST_Response(['error' => 'Could not initialize the cart', 'code' => 'webmcp_cart_unavailable'], 400);
+        }
+
+        // Hydrate the session before inspecting or mutating the cart. Without this,
+        // direct tool calls can miss existing items and bypass sold-individually rules.
+        $cart = WC()->cart->get_cart();
+
         $product_id = absint($req->get_param('product_id'));
-        $qty        = min(100, max(1, absint($req->get_param('qty') ?: 1)));
+        $raw_qty    = $req->get_param('qty');
+        $qty        = 1;
+
+        if ($raw_qty !== null && $raw_qty !== '') {
+            if (!is_scalar($raw_qty) || !preg_match('/^\d+$/', (string) $raw_qty)) {
+                return new WP_REST_Response(['error' => 'Quantity must be a positive integer', 'code' => 'webmcp_invalid_quantity'], 400);
+            }
+            $qty = (int) $raw_qty;
+        }
+
+        if ($qty < 1 || $qty > 100) {
+            return new WP_REST_Response(['error' => 'Quantity must be between 1 and 100', 'code' => 'webmcp_invalid_quantity'], 400);
+        }
 
         if (!$product_id) {
             return new WP_REST_Response(['error' => 'Missing product_id'], 400);
@@ -638,15 +658,65 @@ final class REST {
             return new WP_REST_Response(['error' => 'Product is not available for purchase'], 400);
         }
 
+        $before_quantity = 0;
+        foreach ($cart as $cart_item) {
+            $cart_product = $cart_item['data'] ?? null;
+            if (is_object($cart_product) && method_exists($cart_product, 'get_id') && (int) $cart_product->get_id() === $product_id) {
+                $before_quantity += (int) ($cart_item['quantity'] ?? 0);
+            }
+        }
+
+        // WooCommerce's form/AJAX handlers run this filter before add_to_cart().
+        // Run it here too so quantity and product-rule extensions remain effective.
+        $valid = apply_filters('woocommerce_add_to_cart_validation', true, $product_id, $qty, 0, []);
+        if (!$valid) {
+            $message = 'Could not add to cart';
+            if (function_exists('wc_get_notices')) {
+                $notices = wc_get_notices('error');
+                if (!empty($notices[0]['notice'])) {
+                    $message = sanitize_text_field(wp_strip_all_tags((string) $notices[0]['notice']));
+                }
+            }
+            if (function_exists('wc_clear_notices')) {
+                wc_clear_notices();
+            }
+            return new WP_REST_Response(['error' => $message, 'code' => 'webmcp_cart_add_rejected'], 400);
+        }
+
         $added = WC()->cart->add_to_cart($product_id, $qty);
         if (!$added) {
-            return new WP_REST_Response(['error' => 'Could not add to cart'], 400);
+            $message = 'Could not add to cart';
+            if (function_exists('wc_get_notices')) {
+                $notices = wc_get_notices('error');
+                if (!empty($notices[0]['notice'])) {
+                    $message = sanitize_text_field(wp_strip_all_tags((string) $notices[0]['notice']));
+                }
+            }
+            if (function_exists('wc_clear_notices')) {
+                wc_clear_notices();
+            }
+            return new WP_REST_Response(['error' => $message, 'code' => 'webmcp_cart_add_failed'], 400);
+        }
+
+        $after_quantity = 0;
+        foreach (WC()->cart->get_cart() as $cart_item) {
+            $cart_product = $cart_item['data'] ?? null;
+            if (is_object($cart_product) && method_exists($cart_product, 'get_id') && (int) $cart_product->get_id() === $product_id) {
+                $after_quantity += (int) ($cart_item['quantity'] ?? 0);
+            }
+        }
+
+        $added_quantity = $after_quantity - $before_quantity;
+        if ($added_quantity < 1) {
+            return new WP_REST_Response(['error' => 'No quantity was added to the cart', 'code' => 'webmcp_cart_add_failed'], 400);
         }
 
         return new WP_REST_Response([
-            'ok'      => true,
-            'message' => 'Added to cart',
-            'cart'    => REST::cart_view($req)->get_data(),
+            'ok'             => true,
+            'message'        => 'Added to cart',
+            'requested_qty'  => $qty,
+            'added_qty'      => $added_quantity,
+            'cart'           => REST::cart_view($req)->get_data(),
         ], 200);
         });
     }

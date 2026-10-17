@@ -13,10 +13,23 @@ if (!$tests_dir || !file_exists($tests_dir . '/includes/functions.php')) {
     );
 }
 
+$config_file = getenv('WP_TESTS_CONFIG_FILE_PATH');
+if ($config_file && file_exists($config_file) && !defined('WP_TESTS_CONFIG_FILE_PATH')) {
+    define('WP_TESTS_CONFIG_FILE_PATH', $config_file);
+}
+
 require_once $tests_dir . '/includes/functions.php';
 
 tests_add_filter('muplugins_loaded', static function () {
+    $woo_plugin = getenv('WP_WOO_PLUGIN_PATH');
+    if ($woo_plugin && file_exists($woo_plugin . '/woocommerce.php')) {
+        require_once $woo_plugin . '/woocommerce.php';
+    }
     require dirname(__DIR__) . '/webmcp-layer-for-wordpress.php';
 });
 
 require_once $tests_dir . '/includes/bootstrap.php';
+
+if (getenv('WP_WOO_PLUGIN_PATH') && class_exists('WC_Install')) {
+    WC_Install::install();
+}

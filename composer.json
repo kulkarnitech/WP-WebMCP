@@ -1,0 +1,13 @@
+{
+    "name": "kulkarnitech/webmcp-layer-for-wordpress",
+    "description": "Development dependencies for WebMCP Layer for WordPress.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require-dev": {
+        "phpunit/phpunit": "^9.6",
+        "yoast/phpunit-polyfills": "^4.0"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

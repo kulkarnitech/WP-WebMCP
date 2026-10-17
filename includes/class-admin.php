@@ -56,14 +56,18 @@ final class Admin {
      */
     private static function maybe_migrate_options(): void {
         $options = get_option(self::OPTION_KEY, []);
-        if (!is_array($options) || (int) ($options['_schema_version'] ?? 0) >= 2) return;
+        if (!is_array($options) || (int) ($options['_schema_version'] ?? 0) >= 3) return;
 
         if (!array_key_exists('cap_woo_cart_remove', $options)) $options['cap_woo_cart_remove'] = 'read';
         if (!array_key_exists('cap_woo_coupon_apply', $options)) $options['cap_woo_coupon_apply'] = 'read';
+        if (!array_key_exists('tool_woo_checkout_preview', $options)) $options['tool_woo_checkout_preview'] = 1;
+        if (!array_key_exists('tool_woo_checkout_create', $options)) $options['tool_woo_checkout_create'] = 0;
+        if (!array_key_exists('cap_woo_checkout_preview', $options)) $options['cap_woo_checkout_preview'] = '';
+        if (!array_key_exists('cap_woo_checkout_create', $options)) $options['cap_woo_checkout_create'] = '';
         if (!array_key_exists('cap_bp_activity_create', $options) || $options['cap_bp_activity_create'] === 'read') {
             $options['cap_bp_activity_create'] = 'publish_posts';
         }
-        $options['_schema_version'] = 2;
+        $options['_schema_version'] = 3;
         update_option(self::OPTION_KEY, $options);
     }
 
@@ -85,7 +89,7 @@ final class Admin {
             'default'           => [
                 // Master
                 'enabled'              => 1,
-                '_schema_version'     => 2,
+                '_schema_version'     => 3,
 
                 // Tool toggles
                 'tool_site_search'       => 1,
@@ -100,6 +104,8 @@ final class Admin {
                 'tool_woo_product_get' => 1,
                 'tool_woo_product_categories' => 1,
                 'tool_woo_checkout_fields' => 1,
+                'tool_woo_checkout_preview' => 1,
+                'tool_woo_checkout_create' => 0,
                 'tool_woo_cart_remove' => 1,
                 'tool_woo_coupon_apply' => 1,
                 'tool_pmpro_memberships' => 1,
@@ -114,6 +120,8 @@ final class Admin {
                 'cap_woo_cart_add'     => 'read',
                 'cap_woo_cart_remove'  => 'read',
                 'cap_woo_coupon_apply' => 'read',
+                'cap_woo_checkout_preview' => '',
+                'cap_woo_checkout_create' => '',
                 'cap_bp_members'      => 'read',
                 'cap_pmpro_memberships' => 'read',
                 'cap_bp_groups' => 'read',
@@ -162,6 +170,8 @@ final class Admin {
         self::add_checkbox('tool_site_get_post', 'Tool: site_get_post', 'Expose post retrieval tool (PMPro paywall redaction applies if active).', 'webmcp_layer_tools');
         self::add_checkbox('tool_woo_cart_view', 'Tool: woo_cart_view', 'Expose Woo cart view tool (requires WooCommerce).', 'webmcp_layer_tools');
         self::add_checkbox('tool_woo_cart_add', 'Tool: woo_cart_add', 'Expose Woo add-to-cart tool (requires WooCommerce; should be user-confirmed).', 'webmcp_layer_tools');
+        self::add_checkbox('tool_woo_checkout_preview', 'Tool: woo_checkout_preview', 'Expose Woo checkout preview (updates the customer session but does not create an order).', 'webmcp_layer_tools');
+        self::add_checkbox('tool_woo_checkout_create', 'Tool: woo_checkout_create', 'Expose Woo checkout order creation (disabled by default; requires confirmation and hands payment to native WooCommerce).', 'webmcp_layer_tools');
         self::add_checkbox('tool_bp_members', 'Tool: bp_members', 'Expose BuddyPress/BuddyBoss member search (requires the community plugin).', 'webmcp_layer_tools');
         foreach (['site_get_menu', 'site_get_categories', 'site_get_site_info', 'woo_product_search', 'woo_product_get', 'woo_product_categories', 'woo_checkout_fields', 'woo_cart_remove', 'woo_coupon_apply', 'pmpro_memberships', 'bp_groups', 'bp_activity', 'bp_activity_create'] as $tool) {
             self::add_checkbox('tool_' . $tool, 'Tool: ' . $tool, 'Expose this tool when its integration is available.', 'webmcp_layer_tools');
@@ -186,6 +196,8 @@ final class Admin {
         self::add_capability_select('cap_woo_cart_add', 'Capability required: woo_cart_add', 'Who can see/use add-to-cart tool.');
         self::add_capability_select('cap_woo_cart_remove', 'Capability required: woo_cart_remove', 'Who can see/use cart removal tool.');
         self::add_capability_select('cap_woo_coupon_apply', 'Capability required: woo_coupon_apply', 'Who can see/use coupon application tool.');
+        self::add_capability_select('cap_woo_checkout_preview', 'Capability required: woo_checkout_preview', 'Who can see/use checkout preview.');
+        self::add_capability_select('cap_woo_checkout_create', 'Capability required: woo_checkout_create', 'Who can create checkout orders; leave Public only when same-origin nonce access is acceptable.');
         self::add_capability_select('cap_bp_members', 'Capability required: bp_members', 'Who can see/use community member search.');
         foreach (['pmpro_memberships', 'bp_groups', 'bp_activity', 'bp_activity_create'] as $tool) {
             self::add_capability_select('cap_' . $tool, 'Capability required: ' . $tool, 'Who can see/use this tool.');
@@ -295,6 +307,8 @@ final class Admin {
         $out['tool_site_get_post']   = !empty($value('tool_site_get_post', 1)) ? 1 : 0;
         $out['tool_woo_cart_view'] = !empty($value('tool_woo_cart_view', 1)) ? 1 : 0;
         $out['tool_woo_cart_add']  = !empty($value('tool_woo_cart_add', 1)) ? 1 : 0;
+        $out['tool_woo_checkout_preview'] = !empty($value('tool_woo_checkout_preview', 1)) ? 1 : 0;
+        $out['tool_woo_checkout_create'] = !empty($value('tool_woo_checkout_create', 0)) ? 1 : 0;
         $out['tool_bp_members']    = !empty($value('tool_bp_members', 1)) ? 1 : 0;
         foreach (['site_get_menu', 'site_get_categories', 'site_get_site_info', 'woo_product_search', 'woo_product_get', 'woo_product_categories', 'woo_checkout_fields', 'woo_cart_remove', 'woo_coupon_apply', 'pmpro_memberships', 'bp_groups', 'bp_activity', 'bp_activity_create'] as $tool) {
             $default = $tool === 'bp_activity_create' ? 0 : 1;
@@ -310,6 +324,8 @@ final class Admin {
             'cap_woo_cart_add' => 'read',
             'cap_woo_cart_remove' => 'read',
             'cap_woo_coupon_apply' => 'read',
+            'cap_woo_checkout_preview' => '',
+            'cap_woo_checkout_create' => '',
             'cap_bp_members' => 'read',
             'cap_pmpro_memberships' => 'read',
             'cap_bp_groups' => 'read',
@@ -331,7 +347,7 @@ final class Admin {
         $out['request_size_limit'] = max(1024, min(1048576, (int) $value('request_size_limit', 102400)));
         $out['schema_max_depth'] = max(2, min(16, (int) $value('schema_max_depth', 8)));
         $out['idempotency_ttl'] = max(60, min(86400, (int) $value('idempotency_ttl', 300)));
-        $out['_schema_version'] = 2;
+        $out['_schema_version'] = 3;
 
         return $out;
     }
@@ -442,13 +458,23 @@ final class Admin {
             ],
             [
                 'name' => 'woo_cart_view',
-                'status' => $toolStatus['woo_cart_view'],
+                'status' => $toolStatus['woo_cart_view'] ?? false,
                 'note' => $hasWoo ? 'Woo active: nonce-protected endpoint.' : 'Woo not active: tool not registered.',
             ],
             [
                 'name' => 'woo_cart_add',
-                'status' => $toolStatus['woo_cart_add'],
+                'status' => $toolStatus['woo_cart_add'] ?? false,
                 'note' => $hasWoo ? 'Woo active: requires user confirmation + nonce-protected endpoint.' : 'Woo not active: tool not registered.',
+            ],
+            [
+                'name' => 'woo_checkout_preview',
+                'status' => $toolStatus['woo_checkout_preview'] ?? false,
+                'note' => $hasWoo ? 'Woo active: validates checkout data and updates the customer session without creating an order.' : 'Woo not active: tool not registered.',
+            ],
+            [
+                'name' => 'woo_checkout_create',
+                'status' => $toolStatus['woo_checkout_create'] ?? false,
+                'note' => $hasWoo ? 'Woo active: disabled by default; creates a pending order and hands payment to native WooCommerce.' : 'Woo not active: tool not registered.',
             ],
         ];
 

@@ -67,7 +67,7 @@ Recommended starting values:
 - Request-size limit: leave enabled; temporarily use a small staging value only when testing the 413 path.
 - Idempotency cache: enabled with a short staging TTL (for example, 60 seconds).
 
-After saving, reload the page and confirm that existing settings were preserved and that the migration schema is `2`. A previous `read` value for `bp_activity_create` must not silently remain permissive; the migration should make it `publish_posts`.
+After saving, reload the page and confirm that existing settings were preserved and that the migration schema is `3`. A previous `read` value for `bp_activity_create` must not silently remain permissive; the migration should make it `publish_posts`.
 
 ## 4. Test method and evidence
 
@@ -90,7 +90,7 @@ Do not paste authentication cookies, nonces, authorization headers, or customer 
 | A2 | Activate with WooCommerce, PMPro, and BuddyPress/BuddyBoss active | No PHP warnings/fatals; integration tools appear only when the integration exists. |
 | A3 | Visit `/wp-json/webmcp/v1/manifest` and `/wp-json/webmcp/v1/discovery` | Valid JSON; disabled tools and tools the current visitor cannot execute are not advertised. |
 | A4 | Toggle a tool off, save, and repeat discovery and direct request | Tool disappears from discovery and direct use returns `webmcp_tool_disabled` (403). |
-| A5 | Deactivate/reactivate and upgrade from a pre-remedy settings row | Existing choices remain; schema version becomes 2; secure mutation defaults are applied. |
+| A5 | Deactivate/reactivate and upgrade from a pre-remedy settings row | Existing choices remain; schema version becomes 3; secure mutation defaults are applied. |
 
 ### B. Public content and privacy
 
@@ -154,7 +154,29 @@ Use a disposable cart or activity fixture and a unique key such as `test-2026-08
 
 Test with a disposable cart and sandbox payment settings; do not place a real order.
 
+For a Local by Flywheel smoke run, use a blank or disposable site such as
+`mcptest.local`: create one hidden, purchasable product; enable COD/BACS only
+for the test; enable `woo_checkout_create` temporarily; and use a separate
+browser session with a same-origin REST nonce. Confirm preview returns the
+cart and available gateway, create returns one pending order with the native
+`order-pay` URL, replay returns the same order with
+`X-WebMCP-Idempotent-Replay: 1`, raw `payment_data` is rejected, and a missing
+nonce returns 403. Delete the test order/product and restore the gateway and
+tool toggle before ending the run.
+
 - Product search/get/categories/checkout fields expose only public catalog/schema data.
+- Checkout preview accepts only bounded billing/shipping fields, validates the
+  store's required fields/country/postcode/email rules, updates the current
+  customer session, and returns totals plus available gateway IDs.
+- Checkout creation is disabled by default. When explicitly enabled for
+  staging, it requires the same-origin nonce, an available gateway ID, terms
+  acceptance when the store has a terms page, and a unique idempotency key. It
+  creates one pending order and returns a native WooCommerce order-pay URL;
+  it never accepts `payment_data` or raw card credentials.
+- Complete payment only with WooCommerce's sandbox gateway/order-pay page,
+  then verify the order status and cart/session behavior. Delete the test
+  order afterward using WooCommerce's normal admin tools or a disposable
+  database reset.
 - Add-to-cart accepts a purchasable product and rejects an out-of-stock/non-purchasable product.
 - Cart view never shows another browser’s cart. Use two cookie jars and compare item IDs.
 - Remove and coupon application require the configured capability and nonce by default. An intentional Public setting must be documented as a product decision and retested for cross-session isolation.
